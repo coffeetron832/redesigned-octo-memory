@@ -15,7 +15,7 @@ export async function createWorld(scene, onProgress) {
     const ctx = grassCanvas.getContext('2d');
     for (let y = 0; y < 64; y++) {
         for (let x = 0; x < 64; x++) {
-            const shade = 100 + Math.floor(Math.random() * 80); // variación verde
+            const shade = 100 + Math.floor(Math.random() * 80);
             ctx.fillStyle = `rgb(${shade - 20},${shade},${shade - 40})`;
             ctx.fillRect(x, y, 1, 1);
         }
@@ -49,7 +49,7 @@ export async function createWorld(scene, onProgress) {
 
     if (onProgress) onProgress(40);
 
-    // 🌳 Árboles low poly procedurales
+    // 🌳 Árboles low poly
     const treeMat = new THREE.MeshStandardMaterial({ color: 0x2e7d32, flatShading: true });
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8d6e63, flatShading: true });
 
@@ -78,7 +78,7 @@ export async function createWorld(scene, onProgress) {
 
     if (onProgress) onProgress(70);
 
-    // 🪨 Rocas low poly procedurales
+    // 🪨 Rocas low poly
     const rockMat = new THREE.MeshStandardMaterial({ color: 0x9e9e9e, flatShading: true });
 
     for (let i = 0; i < 15; i++) {
