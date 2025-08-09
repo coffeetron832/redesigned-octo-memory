@@ -1,8 +1,9 @@
 // scripts/player.js
+import * as THREE from 'https://unpkg.com/three@0.155.0/build/three.module.js';
 import { gameLog } from '../main.js';
 
 let input = {
-  forward:false, back:false, left:false, right:false, interact:false
+  forward: false, back: false, left: false, right: false, interact: false
 };
 
 export async function createPlayer(scene, progressCb = ()=>{}){
@@ -13,14 +14,10 @@ export async function createPlayer(scene, progressCb = ()=>{}){
   body.castShadow = true;
   scene.add(body);
 
-  // Camera follow target (optional): we'll keep camera static isométrica
-  progressCb(75);
-
   // Input listeners
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
 
-  // Basic collision/interaction stub
   const playerObj = {
     mesh: body,
     speed: 24, // units per second
@@ -32,15 +29,12 @@ export async function createPlayer(scene, progressCb = ()=>{}){
       if (input.right) dir.x += 1;
       if (dir.lengthSq() > 0){
         dir.normalize();
-        // move in world XZ plane
         body.position.x += dir.x * this.speed * dt;
         body.position.z += dir.z * this.speed * dt;
       }
-      // Simple interaction detection: cast small sphere around player
       if (input.interact){
-        // (a) raycast or distance check to nearest interactable (to be implemented)
         gameLog('Intentando interactuar...');
-        input.interact = false; // single trigger
+        input.interact = false;
       }
     }
   };
