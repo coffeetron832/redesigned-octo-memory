@@ -88,3 +88,32 @@ function animate(){
 export function gameLog(text){
   logEl.innerText = text;
 }
+
+function showDialogue(speaker, text, speed = 30) {
+  const box = document.getElementById('dialogueBox');
+  const nameEl = document.getElementById('speakerName');
+  const textEl = document.getElementById('dialogueText');
+
+  nameEl.textContent = speaker;
+  textEl.textContent = '';
+  box.classList.remove('hidden');
+
+  let i = 0;
+  function typeLetter() {
+    if (i < text.length) {
+      textEl.textContent += text.charAt(i);
+      i++;
+      setTimeout(typeLetter, speed);
+    }
+  }
+  typeLetter();
+}
+
+function hideDialogue() {
+  document.getElementById('dialogueBox').classList.add('hidden');
+}
+
+// Ejemplo de uso:
+setTimeout(() => {
+  showDialogue('Viejo sabio', 'Bienvenido, viajero. Tu aventura comienza en estas tierras misteriosas...');
+}, 1500);
