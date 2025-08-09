@@ -1,0 +1,31 @@
+<!-- index.html -->
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>La Última Puerta - Prototipo</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="loading">Cargando... <span id="percent">0%</span></div>
+
+  <!-- HUD / UI -->
+  <div id="hud">
+    <div id="controls">W A S D / ←↑→↓ mover · Espacio interactuar</div>
+    <div id="log"></div>
+  </div>
+
+  <!-- Canvas render de Three.js -->
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- Librería Three.js (CDN) -->
+  <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+
+  <!-- NOTA: cuando incorpores modelos GLTF, añade GLTFLoader desde examples/jsm -->
+  <!-- Estructura de scripts -->
+  <script type="module" src="scripts/player.js"></script>
+  <script type="module" src="scripts/world.js"></script>
+  <script type="module" src="main.js"></script>
+</body>
+</html>
