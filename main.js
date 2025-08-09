@@ -1,17 +1,20 @@
 // main.js
+import * as THREE from 'https://unpkg.com/three@0.152.2/build/three.module.js';
 import { createPlayer } from './scripts/player.js';
 import { createWorld } from './scripts/world.js';
 
 let scene, renderer, camera;
 let player;
-const canvas = document.getElementById('gameCanvas');
-const loadingEl = document.getElementById('loading');
-const percentEl = document.getElementById('percent');
-const logEl = document.getElementById('log');
+let canvas, loadingEl, percentEl, logEl;
 
 init();
 
 async function init(){
+  canvas = document.getElementById('gameCanvas');
+  loadingEl = document.getElementById('loading');
+  percentEl = document.getElementById('percent');
+  logEl = document.getElementById('log');
+
   // Renderer
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio || 1);
