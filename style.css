@@ -61,3 +61,34 @@ html,body{
   color:#111;
   backdrop-filter: blur(2px);
 }
+
+#dialogueBox {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 12px;
+  padding: 15px;
+  font-family: 'Arial', sans-serif;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  transition: opacity 0.3s ease;
+}
+
+#speakerName {
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 5px;
+}
+
+#dialogueText {
+  font-size: 16px;
+  color: #444;
+  line-height: 1.4;
+}
+
+.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
