@@ -1,4 +1,6 @@
-// game.js - Mini mundo isométrico (colisiones y cámara mejoradas)
+// game.js - Versión pulida: colisión por tile (circle-rect), cámara suave con anticipación,
+// spawn en centro asegurado y sliding natural.
+
 (() => {
   const canvas = document.getElementById('gameCanvas');
   const ctx = canvas.getContext('2d', { alpha: false });
@@ -22,7 +24,13 @@
   const mapW = 20;
   const mapH = 20;
 
-  /* Simple map generation: 0 = grass, 1 = path, 2 = tree, 3 = house */
+  /* tweakables */
+  const PLAYER_RADIUS = 0.35; // en unidades de tiles (map coords). Ajusta para mayor/menos "pegado".
+  const CAMERA_SMOOTH = 10;   // mayor = más snappy; rango útil 4..20
+  const CAMERA_AHEAD = 1.0;   // cuántos tiles mira hacia adelante según velocidad
+  const CAMERA_PAD = 40;      // padding en px para clamp de cámara
+
+  /* Simple map generation: 0 = grass, 1 = path, 2 = tree (blocked), 3 = house (blocked) */
   const map = Array.from({length:mapH}, (_,j) =>
     Array.from({length:mapW}, (_,i)=> 0)
   );
@@ -34,7 +42,7 @@
     map[j][i] = 1;
   }
 
-  // scatter some trees
+  // scatter some trees (blocked)
   for(let k=0;k<60;k++){
     const i = Math.floor(Math.random()*mapW);
     const j = Math.floor(Math.random()*mapH);
@@ -48,14 +56,36 @@
   map[housePos.j+1][housePos.i] = 3;
   map[housePos.j+1][housePos.i+1] = 3;
 
-  /* Player in map coordinates (spawn centered & ensure walkable) */
-  const player = { i: mapW/2, j: mapH/2, speed: 3.2, size: 10, color:'#2b2bff' };
-  // ensure spawn tile is walkable
-  {
-    const ci = Math.floor(player.i);
-    const cj = Math.floor(player.j);
-    if(map[cj][ci] !== 0 && map[cj][ci] !== 1) map[cj][ci] = 0;
+  /* UTIL: is tile blocked? */
+  function isBlocked(i,j){
+    if(i < 0 || j < 0 || i >= mapW || j >= mapH) return true;
+    return (map[j][i] === 2 || map[j][i] === 3);
   }
+
+  /* Find nearest walkable tile to (x,y) by BFS limited radius */
+  function findNearestWalkable(si, sj, maxR = 10){
+    const q = [[Math.floor(si), Math.floor(sj)]];
+    const seen = new Set();
+    for(let idx=0; idx<q.length && q.length < 1000; idx++){
+      const [i,j] = q[idx];
+      const key = `${i},${j}`;
+      if(seen.has(key)) continue;
+      seen.add(key);
+      if(i >= 0 && j >= 0 && i < mapW && j < mapH && !isBlocked(i,j)) return {i: i + 0.5, j: j + 0.5};
+      // push neighbors
+      q.push([i+1,j],[i-1,j],[i,j+1],[i,j-1]);
+    }
+    // fallback center
+    return {i: Math.floor(si)+0.5, j: Math.floor(sj)+0.5};
+  }
+
+  /* Player: spawn center but ensure walkable */
+  let player = { i: mapW/2, j: mapH/2, speed: 3.2, size: 10, color:'#2b2bff' };
+// ensure spawn on walkable tile
+  player = Object.assign(player, findNearestWalkable(player.i, player.j));
+
+  /* Keep previous for velocity */
+  let prevPlayer = { i: player.i, j: player.j };
 
   /* Input */
   const keys = {};
@@ -68,20 +98,38 @@
   });
   window.addEventListener('keyup', e=> keys[e.key.toLowerCase()] = false);
 
-  /* Helpers: world (tile) -> screen */
+  /* Helpers: world (tile) -> screen (pixels) */
   function tileToScreen(i,j){
     const x = (i - j) * (tileW/2);
     const y = (i + j) * (tileH/2);
     return {x,y};
   }
 
-  /* Collision: check if tile is walkable
-     NOTE: use Math.floor to check the tile the player's feet are over.
-     This is simpler and avoids the "round-to-nearest" blocking problem. */
-  function walkable(i,j){
-    if(i < 0 || j < 0 || i >= mapW || j >= mapH) return false;
-    const t = map[j][i];
-    return (t === 0 || t === 1);
+  /* Collision test: circle (player at px,py, r) vs tile rect [ti,ti+1]x[tj,tj+1] in map coords.
+     Returns true if intersects. */
+  function circleIntersectsTile(px, py, ti, tj, r){
+    // tile rect in map coords:
+    const left = ti, right = ti + 1, top = tj, bottom = tj + 1;
+    // closest point on rect to circle center
+    const cx = Math.max(left, Math.min(px, right));
+    const cy = Math.max(top, Math.min(py, bottom));
+    const dx = px - cx, dy = py - cy;
+    return (dx*dx + dy*dy) < (r * r);
+  }
+
+  /* Check if position (ni,nj) collides any blocked tile */
+  function collidesAt(ni, nj){
+    const r = PLAYER_RADIUS;
+    const minI = Math.floor(ni - r);
+    const maxI = Math.floor(ni + r);
+    const minJ = Math.floor(nj - r);
+    const maxJ = Math.floor(nj + r);
+    for(let tj = minJ; tj <= maxJ; tj++){
+      for(let ti = minI; ti <= maxI; ti++){
+        if(isBlocked(ti, tj) && circleIntersectsTile(ni, nj, ti, tj, r)) return true;
+      }
+    }
+    return false;
   }
 
   /* PRECOMPUTE world bounds in screen coords (to clamp camera) */
@@ -99,86 +147,78 @@
     return {minX, maxX, minY, maxY};
   })();
 
-  /* Camera state */
+  /* Camera */
   const camera = {
-    x: 0, // offset in world screen coords (left)
-    y: 0, // offset in world screen coords (top)
-    smooth: 10, // larger -> snappier follow (tweak 4..20)
-    pad: 40,    // padding inside bounds
-    mode: 'smooth' // 'smooth' or 'instant'
+    x: 0, y: 0,
+    smooth: CAMERA_SMOOTH,
+    ahead: CAMERA_AHEAD,
+    pad: CAMERA_PAD,
   };
 
-  // initialize camera to player's position (avoids initial jump)
+  // init camera centered on player
   (function initCameraNow() {
     const viewW = canvas.width / DPR;
     const viewH = canvas.height / DPR;
     const pScreen = tileToScreen(player.i, player.j);
-    let tX = pScreen.x - viewW/2;
-    let tY = pScreen.y - viewH/2;
-
+    const tX = pScreen.x - viewW/2;
+    const tY = pScreen.y - viewH/2;
     const minCamX = worldBounds.minX - camera.pad;
     const maxCamX = worldBounds.maxX - viewW + camera.pad;
     const minCamY = worldBounds.minY - camera.pad;
     const maxCamY = worldBounds.maxY - viewH + camera.pad;
-
-    // handle tiny-world case
     const clampX = (minCamX > maxCamX) ? (minCamX + maxCamX)/2 : null;
     const clampY = (minCamY > maxCamY) ? (minCamY + maxCamY)/2 : null;
-
-    if(clampX !== null) { camera.x = clampX; } else {
-      camera.x = Math.min(Math.max(tX, minCamX), maxCamX);
-    }
-    if(clampY !== null) { camera.y = clampY; } else {
-      camera.y = Math.min(Math.max(tY, minCamY), maxCamY);
-    }
+    if(clampX !== null) { camera.x = clampX; } else { camera.x = Math.min(Math.max(tX, minCamX), maxCamX); }
+    if(clampY !== null) { camera.y = clampY; } else { camera.y = Math.min(Math.max(tY, minCamY), maxCamY); }
   })();
 
-  /* Update camera toward player with lerp and clamping */
   function updateCamera(dt){
     const viewW = canvas.width / DPR;
     const viewH = canvas.height / DPR;
-    const pScreen = tileToScreen(player.i, player.j);
 
-    // desired camera offsets to center player's feet
+    // compute velocity in map coords (tiles/sec)
+    const velI = (player.i - prevPlayer.i) / Math.max(1e-6, dt);
+    const velJ = (player.j - prevPlayer.j) / Math.max(1e-6, dt);
+
+    // projected point ahead in map coords
+    const aheadI = player.i + velI * (camera.ahead * 0.12); // scaled small to feel natural
+    const aheadJ = player.j + velJ * (camera.ahead * 0.12);
+
+    const pScreen = tileToScreen(aheadI, aheadJ);
+
     let targetX = pScreen.x - viewW/2;
     let targetY = pScreen.y - viewH/2;
 
-    // clamp so viewport stays inside world bounds (+/- padding)
+    // clamp
     const minCamX = worldBounds.minX - camera.pad;
     const maxCamX = worldBounds.maxX - viewW + camera.pad;
     const minCamY = worldBounds.minY - camera.pad;
     const maxCamY = worldBounds.maxY - viewH + camera.pad;
 
-    // handle tiny-world case
-    if(minCamX > maxCamX) { targetX = (minCamX + maxCamX) / 2; }
-    else { targetX = Math.min(Math.max(targetX, minCamX), maxCamX); }
+    if(minCamX > maxCamX) targetX = (minCamX + maxCamX)/2;
+    else targetX = Math.min(Math.max(targetX, minCamX), maxCamX);
 
-    if(minCamY > maxCamY) { targetY = (minCamY + maxCamY) / 2; }
-    else { targetY = Math.min(Math.max(targetY, minCamY), maxCamY); }
+    if(minCamY > maxCamY) targetY = (minCamY + maxCamY)/2;
+    else targetY = Math.min(Math.max(targetY, minCamY), maxCamY);
 
-    if(camera.mode === 'instant'){
-      camera.x = targetX; camera.y = targetY;
-    } else {
-      // smooth exponential lerp (frame-rate independent)
-      const t = 1 - Math.exp(-camera.smooth * dt);
-      camera.x += (targetX - camera.x) * t;
-      camera.y += (targetY - camera.y) * t;
-    }
+    // smooth lerp (exponential)
+    const t = 1 - Math.exp(-camera.smooth * dt);
+    camera.x += (targetX - camera.x) * t;
+    camera.y += (targetY - camera.y) * t;
     return {ox: camera.x, oy: camera.y};
   }
 
-  /* Render loop */
+  /* Update & movement with collision resolution */
   let last = performance.now();
   function loop(ts){
     const dt = Math.min(0.05, (ts - last) / 1000);
     last = ts;
     update(dt);
     render(dt);
+    prevPlayer.i = player.i; prevPlayer.j = player.j;
     requestAnimationFrame(loop);
   }
 
-  /* Update player movement in map coordinate axes (i,j)
-     NOTE: collision uses Math.floor to check tile under feet. */
   function update(dt){
     let dx = 0, dy = 0;
     if(keys['w'] || keys['arrowup']) dy -= 1;
@@ -188,38 +228,34 @@
 
     if(dx !== 0 && dy !== 0) { dx *= Math.SQRT1_2; dy *= Math.SQRT1_2; }
 
-    const ni = player.i + dx * player.speed * dt;
-    const nj = player.j + dy * player.speed * dt;
+    const speed = player.speed;
+    const ni = player.i + dx * speed * dt;
+    const nj = player.j + dy * speed * dt;
 
-    // check destination tile (using floor to avoid rounding artifacts)
-    const destI = Math.floor(ni);
-    const destJ = Math.floor(nj);
-
-    if(walkable(destI, destJ)) {
+    // full move
+    if(!collidesAt(ni, nj)){
       player.i = ni; player.j = nj;
-    } else {
-      // try sliding on each axis
-      const tryI = Math.floor(ni);
-      const tryJ = Math.floor(player.j);
-      if(walkable(tryI, tryJ)) player.i = ni;
-      const tryI2 = Math.floor(player.i);
-      const tryJ2 = Math.floor(nj);
-      if(walkable(tryI2, tryJ2)) player.j = nj;
+      return;
     }
+
+    // sliding attempt on i then j
+    if(!collidesAt(ni, player.j)){
+      player.i = ni;
+    } else if(!collidesAt(player.i, nj)){
+      player.j = nj;
+    } // else blocked, stay
   }
 
-  /* Draw helpers (unchanged visuals) */
+  /* Draw helpers */
   function drawTile(x,y,type){
     ctx.save();
     ctx.translate(x, y);
-
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(tileW/2, tileH/2);
     ctx.lineTo(0, tileH);
     ctx.lineTo(-tileW/2, tileH/2);
     ctx.closePath();
-
     if(type === 1) {
       ctx.fillStyle = '#cdb98a';
       ctx.fill();
@@ -234,7 +270,6 @@
       ctx.strokeStyle = 'rgba(0,0,0,0.04)';
       ctx.stroke();
     }
-
     ctx.globalAlpha = 0.08;
     ctx.fillStyle = '#fff';
     ctx.fillRect(-tileW/2, tileH*0.6, tileW, 2);
@@ -267,7 +302,6 @@
     ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.08)';
     ctx.stroke();
-
     ctx.beginPath();
     ctx.moveTo(0, -tileH - 6);
     ctx.lineTo(-tileW/2, -tileH/2 + 6);
@@ -279,13 +313,13 @@
     ctx.restore();
   }
 
-  /* Render everything */
+  /* Render */
   function render(dt){
     ctx.clearRect(0,0,canvas.width, canvas.height);
-    const {ox, oy} = updateCamera(dt); // improved camera
+    const {ox, oy} = updateCamera(dt);
     const cam = {x: ox, y: oy};
 
-    // draw base (tiles)
+    // draw tiles
     for(let j=0;j<mapH;j++){
       for(let i=0;i<mapW;i++){
         const s = tileToScreen(i,j);
@@ -295,7 +329,7 @@
       }
     }
 
-    // collect drawables with their depth to sort by sy
+    // draw objects sorted by depth
     const drawables = [];
     for(let j=0;j<mapH;j++){
       for(let i=0;i<mapW;i++){
@@ -305,7 +339,7 @@
           const sx = s.x - cam.x + canvas.width/DPR/2;
           const sy = s.y - cam.y + canvas.height/DPR/2;
           drawables.push({depth: sy, fn: ()=> drawTree(sx, sy - tileH/2)});
-        } else if(t === 3){ // house base tile - draw only once for top-left
+        } else if(t === 3){ // house (draw only once at top-left)
           if(i === housePos.i && j === housePos.j){
             const s = tileToScreen(i,j);
             const sx = s.x - cam.x + canvas.width/DPR/2;
@@ -316,12 +350,12 @@
       }
     }
 
-    // player screen position
+    // player screen pos
     const pScreen = tileToScreen(player.i, player.j);
     const px = pScreen.x - cam.x + canvas.width/DPR/2;
     const py = pScreen.y - cam.y + canvas.height/DPR/2;
 
-    // add player to drawables so it renders in depth order
+    // draw player as part of drawables for correct depth
     drawables.push({
       depth: py,
       fn: ()=> {
@@ -332,28 +366,34 @@
         ctx.fillStyle = 'rgba(0,0,0,0.22)';
         ctx.fill();
         ctx.restore();
-        // player
+        // body
         ctx.beginPath();
         ctx.fillStyle = player.color;
         ctx.arc(px, py - 8, player.size, 0, Math.PI*2);
         ctx.fill();
-        // simple visor
+        // visor
         ctx.fillStyle = 'rgba(255,255,255,0.35)';
         ctx.fillRect(px - player.size*0.4, py - 12, player.size*0.9, 6);
       }
     });
 
-    // sort and draw
     drawables.sort((a,b)=> a.depth - b.depth);
     for(const d of drawables) d.fn();
 
-    // small HUD
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.fillRect(8,8,190,28);
+    // HUD
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    ctx.fillRect(8,8,230,28);
     ctx.fillStyle = '#111';
     ctx.font = '13px Inter, Arial';
-    ctx.fillText(`Pos: ${player.i.toFixed(2)}, ${player.j.toFixed(2)}`, 14, 26);
+    ctx.fillText(`Pos: ${player.i.toFixed(2)}, ${player.j.toFixed(2)}  |  R:${PLAYER_RADIUS}`, 14, 26);
   }
 
   requestAnimationFrame(loop);
+
+  /* --- Expose helper adjustments in console for quick tuning --- */
+  window.__game_debug = {
+    player, map, setPlayerRadius(r){ console.log('set radius', r); /* no runtime rebuild */ },
+    camera, setCameraSmooth(v){ camera.smooth = v; console.log('camera.smooth=', v); },
+    setCameraAhead(v){ camera.ahead = v; console.log('camera.ahead=', v); }
+  };
 })();
