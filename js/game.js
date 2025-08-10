@@ -1,4 +1,4 @@
-// game.js - Mini mundo isométrico (con cámara mejorada y spawn centrado)
+// game.js - Mini mundo isométrico (colisiones y cámara mejoradas)
 (() => {
   const canvas = document.getElementById('gameCanvas');
   const ctx = canvas.getContext('2d', { alpha: false });
@@ -48,13 +48,12 @@
   map[housePos.j+1][housePos.i] = 3;
   map[housePos.j+1][housePos.i+1] = 3;
 
-  /* Player in map coordinates (float for smooth movement)
-     Spawn at map center (adjusted to be on a walkable tile). */
+  /* Player in map coordinates (spawn centered & ensure walkable) */
   const player = { i: mapW/2, j: mapH/2, speed: 3.2, size: 10, color:'#2b2bff' };
-// ensure spawn tile is walkable
+  // ensure spawn tile is walkable
   {
-    const ci = Math.floor(player.i + 0.5);
-    const cj = Math.floor(player.j + 0.5);
+    const ci = Math.floor(player.i);
+    const cj = Math.floor(player.j);
     if(map[cj][ci] !== 0 && map[cj][ci] !== 1) map[cj][ci] = 0;
   }
 
@@ -76,7 +75,9 @@
     return {x,y};
   }
 
-  /* Collision: check if tile is walkable */
+  /* Collision: check if tile is walkable
+     NOTE: use Math.floor to check the tile the player's feet are over.
+     This is simpler and avoids the "round-to-nearest" blocking problem. */
   function walkable(i,j){
     if(i < 0 || j < 0 || i >= mapW || j >= mapH) return false;
     const t = map[j][i];
@@ -91,8 +92,8 @@
         const s = tileToScreen(i,j);
         minX = Math.min(minX, s.x - tileW/2);
         maxX = Math.max(maxX, s.x + tileW/2);
-        minY = Math.min(minY, s.y);
-        maxY = Math.max(maxY, s.y + tileH);
+        minY = Math.min(minY, s.y - tileH/2);
+        maxY = Math.max(maxY, s.y + tileH + 20);
       }
     }
     return {minX, maxX, minY, maxY};
@@ -102,9 +103,35 @@
   const camera = {
     x: 0, // offset in world screen coords (left)
     y: 0, // offset in world screen coords (top)
-    smooth: 8, // larger = snappier; tweak between 4-12
-    pad: 40 // padding so objects near edges still show comfortably
+    smooth: 10, // larger -> snappier follow (tweak 4..20)
+    pad: 40,    // padding inside bounds
+    mode: 'smooth' // 'smooth' or 'instant'
   };
+
+  // initialize camera to player's position (avoids initial jump)
+  (function initCameraNow() {
+    const viewW = canvas.width / DPR;
+    const viewH = canvas.height / DPR;
+    const pScreen = tileToScreen(player.i, player.j);
+    let tX = pScreen.x - viewW/2;
+    let tY = pScreen.y - viewH/2;
+
+    const minCamX = worldBounds.minX - camera.pad;
+    const maxCamX = worldBounds.maxX - viewW + camera.pad;
+    const minCamY = worldBounds.minY - camera.pad;
+    const maxCamY = worldBounds.maxY - viewH + camera.pad;
+
+    // handle tiny-world case
+    const clampX = (minCamX > maxCamX) ? (minCamX + maxCamX)/2 : null;
+    const clampY = (minCamY > maxCamY) ? (minCamY + maxCamY)/2 : null;
+
+    if(clampX !== null) { camera.x = clampX; } else {
+      camera.x = Math.min(Math.max(tX, minCamX), maxCamX);
+    }
+    if(clampY !== null) { camera.y = clampY; } else {
+      camera.y = Math.min(Math.max(tY, minCamY), maxCamY);
+    }
+  })();
 
   /* Update camera toward player with lerp and clamping */
   function updateCamera(dt){
@@ -112,7 +139,7 @@
     const viewH = canvas.height / DPR;
     const pScreen = tileToScreen(player.i, player.j);
 
-    // desired camera offsets to center player
+    // desired camera offsets to center player's feet
     let targetX = pScreen.x - viewW/2;
     let targetY = pScreen.y - viewH/2;
 
@@ -122,16 +149,21 @@
     const minCamY = worldBounds.minY - camera.pad;
     const maxCamY = worldBounds.maxY - viewH + camera.pad;
 
-    if(targetX < minCamX) targetX = minCamX;
-    if(targetX > maxCamX) targetX = maxCamX;
-    if(targetY < minCamY) targetY = minCamY;
-    if(targetY > maxCamY) targetY = maxCamY;
+    // handle tiny-world case
+    if(minCamX > maxCamX) { targetX = (minCamX + maxCamX) / 2; }
+    else { targetX = Math.min(Math.max(targetX, minCamX), maxCamX); }
 
-    // lerp toward target (uses dt to be frame-rate independent)
-    const t = 1 - Math.exp(-camera.smooth * dt); // smooth exponential lerp
-    camera.x += (targetX - camera.x) * t;
-    camera.y += (targetY - camera.y) * t;
+    if(minCamY > maxCamY) { targetY = (minCamY + maxCamY) / 2; }
+    else { targetY = Math.min(Math.max(targetY, minCamY), maxCamY); }
 
+    if(camera.mode === 'instant'){
+      camera.x = targetX; camera.y = targetY;
+    } else {
+      // smooth exponential lerp (frame-rate independent)
+      const t = 1 - Math.exp(-camera.smooth * dt);
+      camera.x += (targetX - camera.x) * t;
+      camera.y += (targetY - camera.y) * t;
+    }
     return {ox: camera.x, oy: camera.y};
   }
 
@@ -145,7 +177,8 @@
     requestAnimationFrame(loop);
   }
 
-  /* Update player movement in map coordinate axes (i,j) */
+  /* Update player movement in map coordinate axes (i,j)
+     NOTE: collision uses Math.floor to check tile under feet. */
   function update(dt){
     let dx = 0, dy = 0;
     if(keys['w'] || keys['arrowup']) dy -= 1;
@@ -158,15 +191,24 @@
     const ni = player.i + dx * player.speed * dt;
     const nj = player.j + dy * player.speed * dt;
 
-    if(walkable(Math.floor(ni+0.5), Math.floor(nj+0.5))) {
+    // check destination tile (using floor to avoid rounding artifacts)
+    const destI = Math.floor(ni);
+    const destJ = Math.floor(nj);
+
+    if(walkable(destI, destJ)) {
       player.i = ni; player.j = nj;
     } else {
-      if(walkable(Math.floor(ni+0.5), Math.floor(player.j+0.5))) player.i = ni;
-      if(walkable(Math.floor(player.i+0.5), Math.floor(nj+0.5))) player.j = nj;
+      // try sliding on each axis
+      const tryI = Math.floor(ni);
+      const tryJ = Math.floor(player.j);
+      if(walkable(tryI, tryJ)) player.i = ni;
+      const tryI2 = Math.floor(player.i);
+      const tryJ2 = Math.floor(nj);
+      if(walkable(tryI2, tryJ2)) player.j = nj;
     }
   }
 
-  /* Draw helpers */
+  /* Draw helpers (unchanged visuals) */
   function drawTile(x,y,type){
     ctx.save();
     ctx.translate(x, y);
