@@ -1,4 +1,4 @@
-// game.js - Mini mundo isométrico
+// game.js - Mini mundo isométrico (con cámara mejorada y spawn centrado)
 (() => {
   const canvas = document.getElementById('gameCanvas');
   const ctx = canvas.getContext('2d', { alpha: false });
@@ -48,8 +48,15 @@
   map[housePos.j+1][housePos.i] = 3;
   map[housePos.j+1][housePos.i+1] = 3;
 
-  /* Player in map coordinates (float for smooth movement) */
-  const player = { i: 5.5, j: 12.5, speed: 3.2, size: 10, color:'#2b2bff' };
+  /* Player in map coordinates (float for smooth movement)
+     Spawn at map center (adjusted to be on a walkable tile). */
+  const player = { i: mapW/2, j: mapH/2, speed: 3.2, size: 10, color:'#2b2bff' };
+// ensure spawn tile is walkable
+  {
+    const ci = Math.floor(player.i + 0.5);
+    const cj = Math.floor(player.j + 0.5);
+    if(map[cj][ci] !== 0 && map[cj][ci] !== 1) map[cj][ci] = 0;
+  }
 
   /* Input */
   const keys = {};
@@ -76,12 +83,56 @@
     return (t === 0 || t === 1);
   }
 
-  /* Camera */
-  function getCameraOffset() {
-    const screen = tileToScreen(player.i, player.j);
-    const cx = canvas.width / DPR / 2;
-    const cy = canvas.height / DPR / 2;
-    return {ox: screen.x - cx, oy: screen.y - cy};
+  /* PRECOMPUTE world bounds in screen coords (to clamp camera) */
+  const worldBounds = (() => {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for(let j=0;j<mapH;j++){
+      for(let i=0;i<mapW;i++){
+        const s = tileToScreen(i,j);
+        minX = Math.min(minX, s.x - tileW/2);
+        maxX = Math.max(maxX, s.x + tileW/2);
+        minY = Math.min(minY, s.y);
+        maxY = Math.max(maxY, s.y + tileH);
+      }
+    }
+    return {minX, maxX, minY, maxY};
+  })();
+
+  /* Camera state */
+  const camera = {
+    x: 0, // offset in world screen coords (left)
+    y: 0, // offset in world screen coords (top)
+    smooth: 8, // larger = snappier; tweak between 4-12
+    pad: 40 // padding so objects near edges still show comfortably
+  };
+
+  /* Update camera toward player with lerp and clamping */
+  function updateCamera(dt){
+    const viewW = canvas.width / DPR;
+    const viewH = canvas.height / DPR;
+    const pScreen = tileToScreen(player.i, player.j);
+
+    // desired camera offsets to center player
+    let targetX = pScreen.x - viewW/2;
+    let targetY = pScreen.y - viewH/2;
+
+    // clamp so viewport stays inside world bounds (+/- padding)
+    const minCamX = worldBounds.minX - camera.pad;
+    const maxCamX = worldBounds.maxX - viewW + camera.pad;
+    const minCamY = worldBounds.minY - camera.pad;
+    const maxCamY = worldBounds.maxY - viewH + camera.pad;
+
+    if(targetX < minCamX) targetX = minCamX;
+    if(targetX > maxCamX) targetX = maxCamX;
+    if(targetY < minCamY) targetY = minCamY;
+    if(targetY > maxCamY) targetY = maxCamY;
+
+    // lerp toward target (uses dt to be frame-rate independent)
+    const t = 1 - Math.exp(-camera.smooth * dt); // smooth exponential lerp
+    camera.x += (targetX - camera.x) * t;
+    camera.y += (targetY - camera.y) * t;
+
+    return {ox: camera.x, oy: camera.y};
   }
 
   /* Render loop */
@@ -90,7 +141,7 @@
     const dt = Math.min(0.05, (ts - last) / 1000);
     last = ts;
     update(dt);
-    render();
+    render(dt);
     requestAnimationFrame(loop);
   }
 
@@ -187,11 +238,12 @@
   }
 
   /* Render everything */
-  function render(){
+  function render(dt){
     ctx.clearRect(0,0,canvas.width, canvas.height);
-    const {ox, oy} = getCameraOffset();
+    const {ox, oy} = updateCamera(dt); // improved camera
     const cam = {x: ox, y: oy};
 
+    // draw base (tiles)
     for(let j=0;j<mapH;j++){
       for(let i=0;i<mapW;i++){
         const s = tileToScreen(i,j);
@@ -201,16 +253,17 @@
       }
     }
 
+    // collect drawables with their depth to sort by sy
     const drawables = [];
     for(let j=0;j<mapH;j++){
       for(let i=0;i<mapW;i++){
         const t = map[j][i];
-        if(t === 2){
+        if(t === 2){ // tree
           const s = tileToScreen(i,j);
           const sx = s.x - cam.x + canvas.width/DPR/2;
           const sy = s.y - cam.y + canvas.height/DPR/2;
           drawables.push({depth: sy, fn: ()=> drawTree(sx, sy - tileH/2)});
-        } else if(t === 3){
+        } else if(t === 3){ // house base tile - draw only once for top-left
           if(i === housePos.i && j === housePos.j){
             const s = tileToScreen(i,j);
             const sx = s.x - cam.x + canvas.width/DPR/2;
@@ -221,34 +274,38 @@
       }
     }
 
+    // player screen position
     const pScreen = tileToScreen(player.i, player.j);
     const px = pScreen.x - cam.x + canvas.width/DPR/2;
     const py = pScreen.y - cam.y + canvas.height/DPR/2;
 
+    // add player to drawables so it renders in depth order
     drawables.push({
       depth: py,
       fn: ()=> {
+        // shadow
         ctx.save();
         ctx.beginPath();
         ctx.ellipse(px, py + 6, player.size*1.6, player.size*0.8, 0, 0, Math.PI*2);
         ctx.fillStyle = 'rgba(0,0,0,0.22)';
         ctx.fill();
         ctx.restore();
-
+        // player
         ctx.beginPath();
         ctx.fillStyle = player.color;
         ctx.arc(px, py - 8, player.size, 0, Math.PI*2);
         ctx.fill();
-
+        // simple visor
         ctx.fillStyle = 'rgba(255,255,255,0.35)';
         ctx.fillRect(px - player.size*0.4, py - 12, player.size*0.9, 6);
       }
     });
 
+    // sort and draw
     drawables.sort((a,b)=> a.depth - b.depth);
     for(const d of drawables) d.fn();
 
-    // HUD
+    // small HUD
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.fillRect(8,8,190,28);
     ctx.fillStyle = '#111';
