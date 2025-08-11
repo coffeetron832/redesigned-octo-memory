@@ -6,60 +6,133 @@
 <title>Pixel Scene — Clima & Personaje (Mike/Susan)</title>
 <style>
   :root{
-    --btn-bg: rgba(0,0,0,0.45);
-    --btn-hover: rgba(255,255,255,0.06);
-    --ui-fg: #fff;
+    --bg: #000;
+    --panel-bg: rgba(0,0,0,0.45);
+    --panel-fg: #fff;
+    --muted: rgba(255,255,255,0.06);
   }
-  html,body{height:100%;margin:0;background:#000;display:flex;align-items:center;justify-content:center;font-family:Inter,system-ui,Segoe UI,Roboto}
-  #container{position:relative;display:inline-block}
-  canvas{ image-rendering: pixelated; border:4px solid #444; background:#88ccee; display:block }
-  /* fullscreen button */
-  .top-right {
-    position:absolute; top:8px; right:8px; display:flex; gap:8px; align-items:center;
+  html,body{height:100%;margin:0;background:var(--bg);display:flex;align-items:center;justify-content:center;font-family:Inter,system-ui,Segoe UI,Roboto;color:var(--panel-fg)}
+  .app {
+    display:flex;
+    gap:18px;
+    align-items:flex-start;
+    padding:18px;
   }
-  .ui-btn {
-    width:36px; height:36px; border-radius:8px; background:var(--btn-bg);
-    display:grid; place-items:center; border:1px solid rgba(255,255,255,0.06);
-    cursor:pointer; backdrop-filter: blur(4px);
+
+  /* CANVAS WRAPPER */
+  #container{ position:relative; display:inline-block; border-radius:8px; overflow:visible }
+  canvas{ image-rendering: pixelated; border:4px solid #444; background:#88ccee; display:block; }
+
+  /* UI column (fuera del canvas) */
+  .ui {
+    width: 260px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
   }
-  .ui-btn:hover{ transform: translateY(-2px); background:var(--btn-hover) }
-  .sr{ position:absolute !important; height:1px; width:1px; overflow:hidden; clip:rect(1px,1px,1px,1px); white-space:nowrap }
-  /* character selector bottom-left */
-  .char-select {
-    position:absolute; left:8px; bottom:8px; display:flex; gap:8px; align-items:center;
-    background: rgba(0,0,0,0.30); padding:6px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);
-    backdrop-filter: blur(4px);
+  .card {
+    background: var(--panel-bg);
+    border-radius:10px;
+    padding:10px;
+    border:1px solid var(--muted);
+    backdrop-filter: blur(6px);
   }
-  .char-btn { padding:6px 8px; background:transparent; color:var(--ui-fg); border-radius:8px; cursor:pointer; border:0; font-size:13px }
-  .char-btn.active { background: rgba(255,255,255,0.08) }
-  /* small weather badge top-left */
-  .badge {
-    position:absolute; left:8px; top:8px; padding:6px 8px; border-radius:8px; background: rgba(0,0,0,0.35);
-    font-size:13px; color:var(--ui-fg); border:1px solid rgba(255,255,255,0.04);
+  .row { display:flex; gap:8px; align-items:center; justify-content:space-between; }
+  .title { font-weight:600; margin-bottom:6px; }
+  .small { font-size:13px; color:#ddd; }
+
+  /* Buttons */
+  .btn {
+    background: transparent;
+    border: 1px solid var(--muted);
+    color: var(--panel-fg);
+    padding:8px 10px;
+    border-radius:8px;
+    cursor:pointer;
   }
-  .hint { position:absolute; left:50%; transform:translateX(-50%); bottom:8px; color:#ddd; font-size:12px; opacity:0.9; }
+  .btn.primary { background: rgba(255,255,255,0.07); }
+  .btn.small { padding:6px 8px; font-size:13px; }
+
+  /* Character selector (outside canvas) */
+  .characters { display:flex; gap:8px; }
+  .char-btn { padding:8px 12px; border-radius:8px; background:transparent; border:1px solid var(--muted); cursor:pointer; color:var(--panel-fg); }
+  .char-btn.active { background: rgba(255,255,255,0.08); }
+
+  /* hint */
+  .hint { font-size:12px; color:#cfcfcf; opacity:0.9; text-align:center; }
+
+  /* small weather badge used earlier now moved to UI */
+  #weatherBadge { font-weight:600; }
+
+  /* responsive: stack on small screens */
+  @media (max-width:800px){
+    .app { flex-direction:column; align-items:center; }
+    .ui { width: 92%; max-width:420px; }
+  }
 </style>
 </head>
 <body>
-  <div id="container" aria-label="Escenario pixel art interactivo">
-    <canvas id="game"></canvas>
-
-    <div class="top-right" role="group" aria-label="Controles">
-      <button id="fsBtn" class="ui-btn" title="Pantalla completa" aria-label="Pantalla completa"><svg viewBox="0 0 24 24" width="18" height="18" fill="#fff"><path id="fsPath" d="M7 14H5v4h4v-2H7v-2zm10 6h-4v2h6v-6h-2v4zM5 4v6h2V6h2V4H5zm12 0v2h2v2h2V4h-4z"/></svg></button>
+  <div class="app">
+    <!-- Canvas area -->
+    <div id="container" aria-label="Escenario pixel art">
+      <canvas id="game" role="img" aria-label="Escena pixelada"></canvas>
+      <!-- fullscreen icon top-right inside container -->
+      <button id="fsBtn" title="Pantalla completa" style="position:absolute; top:8px; right:8px; width:36px; height:36px; border-radius:8px; background:var(--panel-bg); border:1px solid var(--muted); display:grid; place-items:center; cursor:pointer;">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="#fff"><path id="fsPath" d="M7 14H5v4h4v-2H7v-2zm10 6h-4v2h6v-6h-2v4zM5 4v6h2V6h2V4H5zm12 0v2h2v2h2V4h-4z"/></svg>
+      </button>
     </div>
 
-    <div class="badge" id="weatherBadge" aria-live="polite">Detectando clima…</div>
+    <!-- Controls outside the canvas -->
+    <div class="ui" aria-label="Panel de controles">
+      <!-- Local time card -->
+      <div class="card" id="timeCard">
+        <div class="title">Hora local</div>
+        <div class="row">
+          <div style="font-size:20px;font-weight:700" id="localTime">--:--:--</div>
+          <div style="font-size:13px;color:#bbb" id="timePeriod">—</div>
+        </div>
+        <div class="small hint" style="margin-top:8px">La escena se ajusta según la hora y el clima local.</div>
+      </div>
 
-    <div class="char-select" role="radiogroup" aria-label="Seleccionar personaje">
-      <button id="btnMike" class="char-btn active" role="radio" aria-checked="true">Mike</button>
-      <button id="btnSusan" class="char-btn" role="radio" aria-checked="false">Susan</button>
+      <!-- Weather & location -->
+      <div class="card">
+        <div class="title">Clima</div>
+        <div id="weatherBadge">Detectando clima…</div>
+
+        <div style="margin-top:10px; display:flex; gap:8px;">
+          <button id="allowLoc" class="btn small primary">Permitir ubicación</button>
+          <button id="retryLoc" class="btn small">Reintentar</button>
+        </div>
+
+        <div style="margin-top:10px;">
+          <label class="small">Buscar ciudad (manual)</label>
+          <div style="display:flex; gap:8px; margin-top:6px;">
+            <input id="cityInput" placeholder="Bogotá, Madrid..." style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--muted);background:transparent;color:var(--panel-fg)">
+            <button id="searchCity" class="btn small">Buscar</button>
+          </div>
+          <div id="locStatus" class="small" style="margin-top:8px;color:#ccc">Estado: esperando</div>
+        </div>
+      </div>
+
+      <!-- Character selection -->
+      <div class="card">
+        <div class="title">Personaje</div>
+        <div class="characters" role="radiogroup" aria-label="Elegir personaje">
+          <button id="btnMike" class="char-btn active" role="radio" aria-checked="true">Mike</button>
+          <button id="btnSusan" class="char-btn" role="radio" aria-checked="false">Susan</button>
+        </div>
+        <div class="small hint" style="margin-top:8px">Cambia el personaje en cualquier momento.</div>
+      </div>
+
+      <div class="card">
+        <div class="title">Consejo</div>
+        <div class="small">Si niegas ubicación, usa la búsqueda manual por ciudad.</div>
+      </div>
     </div>
-
-    <div class="hint">Permite ubicación para adaptar el clima. — Puedes cambiar personaje en la esquina inferior izquierda.</div>
   </div>
 
 <script>
-/* ====== CONFIG ====== */
+/* ================= CONFIG (igual que antes, con añadidos) ================= */
 const LOGICAL = 64;
 const DEFAULT_SCALE = 4;
 let SCALE = DEFAULT_SCALE;
@@ -75,7 +148,7 @@ function applyCanvasSize(){
 }
 applyCanvasSize();
 
-/* ====== STATE ====== */
+/* STATE */
 let frame = 0;
 let action = 'idle';
 let actionTime = 0;
@@ -84,34 +157,32 @@ let posX = 20;
 const groundY = 44;
 let jumpOffset = 0, armOffset = 0, legOffset = 0, scratchOffset = 0;
 
-/* clouds */
 const clouds = [
   { x: 4, y:8, speed:0.02, w:12 },
   { x: 30, y:6, speed:0.03, w:14 },
   { x: 50, y:10, speed:0.018, w:10 }
 ];
 
-/* weather state (controlled by API or fallback) */
-let weather = { kind: 'unknown', temp: null, desc: '—' }; // kinds: clear, partly, cloudy, rain, snow, fog, thunder, unknown
+let weather = { kind: 'unknown', temp: null, desc: '—' };
+let rainDrops = [], snowFlakes = [], fogAlpha = 0;
+let character = 'mike';
 
-/* effects arrays */
-let rainDrops = [];
-let snowFlakes = [];
-let fogAlpha = 0;
-
-/* character choice */
-let character = 'mike'; // 'mike' or 'susan'
-
-/* UI elements */
+/* UI refs */
 const weatherBadge = document.getElementById('weatherBadge');
+const allowLoc = document.getElementById('allowLoc');
+const retryLoc = document.getElementById('retryLoc');
+const cityInput = document.getElementById('cityInput');
+const searchCity = document.getElementById('searchCity');
+const locStatus = document.getElementById('locStatus');
 const btnMike = document.getElementById('btnMike');
 const btnSusan = document.getElementById('btnSusan');
+const localTimeEl = document.getElementById('localTime');
+const timePeriodEl = document.getElementById('timePeriod');
 const fsBtn = document.getElementById('fsBtn');
 const fsPath = document.getElementById('fsPath');
 
-/* ====== UTIL: weathercode -> kind ====== */
+/* UTIL: map open-meteo codes */
 function mapWeatherCode(code){
-  // Open-Meteo codes: https://open-meteo.com/en/docs
   if(code === 0) return 'clear';
   if(code === 1 || code === 2) return 'partly';
   if(code === 3) return 'cloudy';
@@ -123,13 +194,14 @@ function mapWeatherCode(code){
   return 'unknown';
 }
 
-/* ====== Weather fetch using Open-Meteo (no API key) ====== */
+/* Fetch weather (Open-Meteo) */
 async function fetchWeatherAt(lat, lon){
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-                `&current_weather=true&timezone=auto`;
+    locStatus.textContent = `Ubicación: ${lat.toFixed(3)}, ${lon.toFixed(3)}`;
+    weatherBadge.textContent = 'Obteniendo clima…';
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&timezone=auto`;
     const r = await fetch(url);
-    if(!r.ok) throw new Error('HTTP ' + r.status);
+    if(!r.ok) throw new Error('HTTP '+r.status);
     const j = await r.json();
     if(j && j.current_weather){
       const cw = j.current_weather;
@@ -138,76 +210,118 @@ async function fetchWeatherAt(lat, lon){
       updateWeatherEffects();
       updateBadge();
     } else {
-      weather = { kind: 'unknown', temp: null, desc: '—' };
+      weather = { kind:'unknown', temp:null, desc:'—' };
       updateBadge();
     }
-  } catch (err) {
-    console.error('Weather fetch error', err);
-    weather = { kind: 'unknown', temp: null, desc: 'error' };
-    updateBadge();
+  } catch(e){
+    console.error(e);
+    locStatus.textContent = 'Error al obtener clima.';
+    weatherBadge.textContent = 'Clima: error';
   }
 }
 
-/* ====== Geolocation request ====== */
+/* Geolocation request (called by UI) */
 function requestLocationAndWeather(){
   if(!navigator.geolocation){
-    weatherBadge.textContent = 'Geolocalización no soportada — mostrando clima local (estimado)';
+    weatherBadge.textContent = 'Geolocalización no soportada';
+    locStatus.textContent = 'Geolocalización no soportada';
     return;
   }
+  locStatus.textContent = 'Solicitando ubicación…';
   weatherBadge.textContent = 'Solicitando ubicación…';
   navigator.geolocation.getCurrentPosition(async pos => {
     const { latitude, longitude } = pos.coords;
-    weatherBadge.textContent = 'Obteniendo clima…';
+    locStatus.textContent = `Ubicación detectada`;
     await fetchWeatherAt(latitude, longitude);
   }, err => {
-    console.warn('geolocation denied or failed', err);
-    weatherBadge.textContent = 'Ubicación denegada — usando hora local';
-    // fallback: keep default (only time-of-day effects)
+    console.warn(err);
+    locStatus.textContent = 'Ubicación denegada o fallida.';
+    weatherBadge.textContent = 'Ubicación denegada — usa búsqueda manual';
   }, { timeout: 10000 });
 }
 
-/* ====== Adjust visual effects per weather ====== */
+/* Geocode city (Open-Meteo geocoding) */
+async function geocodeCity(name){
+  try {
+    locStatus.textContent = 'Buscando ciudad…';
+    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1`;
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const j = await r.json();
+    if(j && j.results && j.results.length){
+      const res = j.results[0];
+      locStatus.textContent = `Encontrado: ${res.name}, ${res.country}`;
+      await fetchWeatherAt(res.latitude, res.longitude);
+    } else {
+      locStatus.textContent = 'Ciudad no encontrada.';
+      weatherBadge.textContent = 'Ciudad no encontrada';
+    }
+  } catch(e){
+    console.error(e);
+    locStatus.textContent = 'Error búsqueda ciudad';
+    weatherBadge.textContent = 'Error búsqueda';
+  }
+}
+
+/* Update weather effects */
 function updateWeatherEffects(){
   rainDrops = []; snowFlakes = []; fogAlpha = 0;
   switch(weather.kind){
     case 'rain':
     case 'drizzle':
     case 'thunder':
-      // spawn raindrops
       for(let i=0;i<160;i++){
-        rainDrops.push({
-          x: Math.random()*LOGICAL,
-          y: Math.random()*LOGICAL,
-          l: 1 + Math.random()*2,
-          speed: 0.8 + Math.random()*1.6
-        });
+        rainDrops.push({ x: Math.random()*LOGICAL, y: Math.random()*LOGICAL, l: 1 + Math.random()*2, speed: 0.8 + Math.random()*1.6 });
       }
       break;
     case 'snow':
       for(let i=0;i<120;i++){
-        snowFlakes.push({
-          x: Math.random()*LOGICAL,
-          y: Math.random()*LOGICAL,
-          r: 0.7 + Math.random()*1.6,
-          speed: 0.2 + Math.random()*0.7
-        });
+        snowFlakes.push({ x: Math.random()*LOGICAL, y: Math.random()*LOGICAL, r: 0.7 + Math.random()*1.6, speed: 0.2 + Math.random()*0.7 });
       }
       break;
     case 'fog':
       fogAlpha = 0.28;
       break;
-    case 'partly':
-    case 'cloudy':
-      // more/denser clouds
-      break;
-    case 'clear':
     default:
-      // clear sky minimal effects
       break;
   }
 }
 
-/* ====== DIBUJO: background, sun/moon, clouds, tree, ground ====== */
+/* Update badge text */
+function updateBadge(){
+  const t = weather.temp !== null ? `${Math.round(weather.temp)}°C` : '';
+  let label = '';
+  switch(weather.kind){
+    case 'clear': label = 'Despejado'; break;
+    case 'partly': label = 'Parcial'; break;
+    case 'cloudy': label = 'Nublado'; break;
+    case 'rain': label = 'Lluvia'; break;
+    case 'drizzle': label = 'Llovizna'; break;
+    case 'snow': label = 'Nieve'; break;
+    case 'fog': label = 'Niebla'; break;
+    case 'thunder': label = 'Tormenta'; break;
+    default: label = 'Hora local';
+  }
+  weatherBadge.textContent = `${label} ${t}`;
+}
+
+/* Time display update */
+function updateLocalTime(){
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2,'0');
+  const mm = String(now.getMinutes()).padStart(2,'0');
+  const ss = String(now.getSeconds()).padStart(2,'0');
+  localTimeEl.textContent = `${hh}:${mm}:${ss}`;
+  const period = getTimeOfDay();
+  timePeriodEl.textContent = period.charAt(0).toUpperCase() + period.slice(1);
+}
+setInterval(updateLocalTime, 1000);
+updateLocalTime();
+
+/* ====== Drawing functions (kept from previous implementation) ====== */
+/* computeSunMoonPos, drawBackground, drawCloud, drawTree, drawGround, drawCharacter, drawRain, updateRain, drawSnow, updateSnow, drawFog, updateAction, loop, drawStarsForNight */
+/* For brevity here: include same drawing/loop code as previous version (unchanged), copying core functions. */
+
 function getTimeOfDay(){
   const now = new Date();
   const h = now.getHours();
@@ -220,7 +334,7 @@ function computeSunMoonPos(){
   const now = new Date();
   const hour = now.getHours() + now.getMinutes()/60;
   let sunVisible = (hour >=6 && hour <=18);
-  let t, x, y;
+  let t,x,y;
   if(sunVisible){
     t = (hour - 6) / 12;
     x = 6 + t*(LOGICAL-12);
@@ -236,14 +350,12 @@ function computeSunMoonPos(){
 }
 
 function drawBackground(timeOfDay){
-  // base sky
   if(timeOfDay === 'morning') ctx.fillStyle = '#bfefff';
   else if(timeOfDay === 'afternoon') ctx.fillStyle = '#9fe3ff';
   else if(timeOfDay === 'evening') ctx.fillStyle = '#ffb86b';
   else ctx.fillStyle = '#07122a';
   ctx.fillRect(0,0,canvas.width,canvas.height);
 
-  // evening multi-band
   if(timeOfDay === 'evening'){
     ctx.save();
     const bandH = canvas.height/6;
@@ -253,7 +365,6 @@ function drawBackground(timeOfDay){
     ctx.restore();
   }
 
-  // sun/moon
   const pos = computeSunMoonPos();
   ctx.save(); ctx.scale(SCALE,SCALE);
   if(pos.sun){
@@ -261,7 +372,6 @@ function drawBackground(timeOfDay){
     ctx.fillStyle = '#FFD24D'; ctx.fillRect(Math.round(pos.x),Math.round(pos.y),6,6);
   } else {
     ctx.fillStyle = '#f7f9ff'; ctx.fillRect(Math.round(pos.x),Math.round(pos.y),6,6);
-    // bite
     ctx.fillStyle = (timeOfDay === 'night') ? '#07122a' : '#9b67d3';
     ctx.fillRect(Math.round(pos.x)+2,Math.round(pos.y)+1,3,3);
   }
@@ -271,9 +381,6 @@ function drawBackground(timeOfDay){
 function drawCloud(cx, cy, w, timeOfDay){
   ctx.save(); ctx.scale(SCALE,SCALE);
   ctx.fillStyle = (timeOfDay === 'night') ? 'rgba(255,255,255,0.12)' : '#ffffff';
-  // make denser if weather is cloudy/partly
-  const alpha = (weather.kind === 'cloudy' || weather.kind === 'partly') ? 1.0 : 1.0;
-  ctx.globalAlpha = alpha;
   ctx.fillRect(cx, cy+1, w-2, 2);
   ctx.fillRect(cx+1, cy, w-4, 2);
   ctx.fillRect(cx+Math.floor(w/2)-1, cy-1, 3, 2);
@@ -302,256 +409,130 @@ function drawGround(timeOfDay){
   ctx.restore();
 }
 
-/* ====== Character draw (Mike / Susan) ====== */
 function drawCharacter(px, py, timeOfDay){
   ctx.save(); ctx.scale(SCALE,SCALE); ctx.translate(px, py - jumpOffset);
-  // shadow
   ctx.fillStyle = (timeOfDay === 'night') ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.12)';
   ctx.fillRect(12,26,8,1);
-
-  // skin
   ctx.fillStyle = '#FFD27F'; ctx.fillRect(12,4,8,8);
 
-  // hair differences:
   if(character === 'mike'){
     ctx.fillStyle = (timeOfDay === 'night') ? '#1f2439' : '#2a2f4a';
-    ctx.fillRect(12,4,8,2); // short hair
-  } else { // susan: longer hair side pixel
+    ctx.fillRect(12,4,8,2);
+  } else {
     ctx.fillStyle = (timeOfDay === 'night') ? '#2b1f35' : '#6b2b6b';
     ctx.fillRect(11,4,10,2);
     ctx.fillRect(11,6,1,4);
   }
 
-  // eyes (blink)
   ctx.fillStyle = '#000';
   if(!(action === 'blink' && Math.floor(frame/10)%2 === 0)){
     ctx.fillRect(14,6,1,1); ctx.fillRect(17,6,1,1);
   }
-
-  // mouth
   ctx.fillStyle = '#9b3a3a'; ctx.fillRect(15,9,2,1);
 
-  // body color differences
   if(character === 'mike'){
     ctx.fillStyle = (timeOfDay === 'night') ? '#25407a' : '#3366cc';
     ctx.fillRect(10,12,12,8);
     ctx.fillStyle = (timeOfDay === 'night') ? '#213560' : '#2b55a1';
     ctx.fillRect(12,14,8,4);
   } else {
-    // susan shirt pink
     ctx.fillStyle = (timeOfDay === 'night') ? '#7a3a5a' : '#ff77bb';
     ctx.fillRect(10,12,12,8);
     ctx.fillStyle = (timeOfDay === 'night') ? '#5a2a43' : '#d64b95';
     ctx.fillRect(12,14,8,4);
   }
 
-  // arms (and scratch)
   ctx.fillStyle = '#FFD27F';
   ctx.fillRect(8,12+Math.round(armOffset),2,6);
-  if(action === 'scratch'){
-    ctx.fillRect(22,8+Math.round(scratchOffset),2,6);
-  } else {
-    ctx.fillRect(22,12-Math.round(armOffset),2,6);
-  }
+  if(action === 'scratch') ctx.fillRect(22,8+Math.round(scratchOffset),2,6);
+  else ctx.fillRect(22,12-Math.round(armOffset),2,6);
 
-  // legs + boots
   ctx.fillStyle = (timeOfDay === 'night') ? '#2b2b2b' : '#444';
   ctx.fillRect(12,20-Math.round(legOffset),3,6);
   ctx.fillRect(17,20+Math.round(legOffset),3,6);
   ctx.fillStyle = '#111'; ctx.fillRect(12,25,3,1); ctx.fillRect(17,25,3,1);
-
   ctx.restore();
 }
 
-/* ====== Weather effect draws ====== */
-function drawRain(){
-  ctx.save(); ctx.scale(SCALE,SCALE);
-  ctx.fillStyle = 'rgba(180,210,255,0.85)';
-  for(const r of rainDrops){
-    ctx.fillRect(Math.round(r.x), Math.round(r.y), 1, Math.ceil(r.l));
-  }
-  ctx.restore();
-}
-function updateRain(){
-  for(const r of rainDrops){
-    r.y += r.speed;
-    r.x -= 0.1; // slight wind
-    if(r.y > LOGICAL + 2){ r.y = -2; r.x = Math.random()*LOGICAL; }
-  }
-}
-function drawSnow(){
-  ctx.save(); ctx.scale(SCALE,SCALE);
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  for(const s of snowFlakes){
-    ctx.fillRect(Math.round(s.x), Math.round(s.y), Math.ceil(s.r), Math.ceil(s.r));
-  }
-  ctx.restore();
-}
-function updateSnow(){
-  for(const s of snowFlakes){
-    s.y += s.speed;
-    s.x += Math.sin(frame/30 + s.x)*0.1;
-    if(s.y > LOGICAL+2){ s.y = -2; s.x = Math.random()*LOGICAL; }
-  }
-}
-function drawFog(){
-  if(fogAlpha <= 0) return;
-  ctx.save();
-  ctx.globalAlpha = fogAlpha;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-  ctx.restore();
-}
+function drawRain(){ ctx.save(); ctx.scale(SCALE,SCALE); ctx.fillStyle='rgba(180,210,255,0.85)'; for(const r of rainDrops) ctx.fillRect(Math.round(r.x),Math.round(r.y),1,Math.ceil(r.l)); ctx.restore(); }
+function updateRain(){ for(const r of rainDrops){ r.y += r.speed; r.x -= 0.1; if(r.y > LOGICAL+2){ r.y = -2; r.x = Math.random()*LOGICAL; } } }
+function drawSnow(){ ctx.save(); ctx.scale(SCALE,SCALE); ctx.fillStyle='rgba(255,255,255,0.95)'; for(const s of snowFlakes) ctx.fillRect(Math.round(s.x),Math.round(s.y),Math.ceil(s.r),Math.ceil(s.r)); ctx.restore(); }
+function updateSnow(){ for(const s of snowFlakes){ s.y += s.speed; s.x += Math.sin(frame/30 + s.x)*0.1; if(s.y > LOGICAL+2){ s.y = -2; s.x = Math.random()*LOGICAL; } } }
+function drawFog(){ if(fogAlpha <=0) return; ctx.save(); ctx.globalAlpha = fogAlpha; ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore(); }
 
-/* ====== ACTIONS ====== */
-function updateAction(){
-  const actions = ['idle','walk','blink','scratch','jump'];
-  action = actions[Math.floor(Math.random()*actions.length)];
-  actionTime = 60 + Math.floor(Math.random()*90);
-  if(action === 'walk' && Math.random() > 0.6) dir *= -1;
-}
+function updateAction(){ const actions=['idle','walk','blink','scratch','jump']; action=actions[Math.floor(Math.random()*actions.length)]; actionTime=60+Math.floor(Math.random()*90); if(action==='walk'&&Math.random()>0.6)dir*=-1; }
 
-/* ====== MAIN LOOP ====== */
+/* stars */
+const stars = (()=>{ const a=[]; for(let i=0;i<60;i++) a.push({ x: Math.random()*(LOGICAL-6)+3, y: Math.random()*(groundY-20)+2, r: Math.random()>0.85?1.5:1 }); return a; })();
+function drawStarsForNight(){ ctx.save(); ctx.scale(SCALE,SCALE); ctx.fillStyle='#ffffff'; for(const s of stars) ctx.fillRect(Math.round(s.x), Math.round(s.y), s.r, s.r); ctx.restore(); }
+
+/* Main loop */
 function loop(){
   frame++;
   const timeOfDay = getTimeOfDay();
 
-  // clouds move (slower at night)
-  for(const c of clouds){
-    c.x += c.speed * (timeOfDay === 'night' ? 0.6 : 1);
-    if(c.x > LOGICAL + c.w) c.x = -c.w - 2;
-  }
+  for(const c of clouds){ c.x += c.speed * (timeOfDay==='night'?0.6:1); if(c.x > LOGICAL + c.w) c.x = -c.w - 2; }
 
   if(actionTime > 0) actionTime--; else updateAction();
 
-  if(action === 'walk'){
-    posX += 0.12 * dir;
-    armOffset = Math.sin(frame/6)*1.2;
-    legOffset = Math.sin(frame/6)*1.6;
-  } else { armOffset = 0; legOffset = 0; }
+  if(action === 'walk'){ posX += 0.12 * dir; armOffset = Math.sin(frame/6)*1.2; legOffset = Math.sin(frame/6)*1.6; } else { armOffset = 0; legOffset = 0; }
+  scratchOffset = (action === 'scratch')? Math.sin(frame/4)*2 : 0;
+  jumpOffset = (action === 'jump')? Math.abs(Math.sin(frame/6)*4)*(Math.sin(frame/6)>0?1:0) : 0;
 
-  scratchOffset = (action === 'scratch') ? Math.sin(frame/4)*2 : 0;
-  jumpOffset = (action === 'jump') ? Math.abs(Math.sin(frame/6)*4)*(Math.sin(frame/6)>0?1:0) : 0;
-
-  // keep inside
   const leftLimit = 6, rightLimit = LOGICAL - 20;
   if(posX < leftLimit){ posX = leftLimit; dir = 1; }
   if(posX > rightLimit){ posX = rightLimit; dir = -1; }
 
-  // update weather particle physics
   if(rainDrops.length) updateRain();
   if(snowFlakes.length) updateSnow();
 
-  // draw scene
   ctx.clearRect(0,0,canvas.width,canvas.height);
   drawBackground(timeOfDay);
+  if(timeOfDay === 'night') drawStarsForNight();
+  else if(timeOfDay === 'evening'){ ctx.save(); ctx.globalAlpha = 0.25; drawStarsForNight(); ctx.restore(); }
 
-  // stars for night (soft)
-  if(timeOfDay === 'night'){
-    drawStarsForNight();
-  } else if(timeOfDay === 'evening'){
-    ctx.save(); ctx.globalAlpha = 0.25; drawStarsForNight(); ctx.restore();
-  }
-
-  // clouds
   for(const c of clouds) drawCloud(Math.round(c.x), Math.round(c.y), c.w, timeOfDay);
-
-  // tree and ground
   drawTree(timeOfDay);
   drawGround(timeOfDay);
 
-  // weather effects draw
   if(rainDrops.length) drawRain();
   if(snowFlakes.length) drawSnow();
   if(fogAlpha > 0) drawFog();
 
-  // character
   drawCharacter(Math.round(posX), groundY - 28, timeOfDay);
 
   requestAnimationFrame(loop);
 }
 
-/* small stars function reused */
-const stars = (() => {
-  const arr = [];
-  for(let i=0;i<60;i++){
-    arr.push({ x: Math.random() * (LOGICAL - 6) + 3, y: Math.random() * (groundY - 20) + 2, r: Math.random() > 0.85 ? 1.5 : 1 });
-  }
-  return arr;
-})();
-function drawStarsForNight(){
-  ctx.save(); ctx.scale(SCALE,SCALE); ctx.fillStyle = '#ffffff';
-  for(const s of stars) ctx.fillRect(Math.round(s.x), Math.round(s.y), s.r, s.r);
-  ctx.restore();
-}
-
-/* ====== badge update ====== */
-function updateBadge(){
-  const t = weather.temp !== null ? `${Math.round(weather.temp)}°C` : '';
-  let label = '';
-  switch(weather.kind){
-    case 'clear': label = 'Despejado'; break;
-    case 'partly': label = 'Parcial'; break;
-    case 'cloudy': label = 'Nublado'; break;
-    case 'rain': label = 'Lluvia'; break;
-    case 'drizzle': label = 'Llovizna'; break;
-    case 'snow': label = 'Nieve'; break;
-    case 'fog': label = 'Niebla'; break;
-    case 'thunder': label = 'Tormenta'; break;
-    default: label = 'Hora local';
-  }
-  weatherBadge.textContent = `${label} ${t}`;
-}
-
-/* ====== Fullscreen & integer scaling ====== */
-function computeScaleForFullscreen(){
-  const maxW = window.innerWidth, maxH = window.innerHeight;
-  const scale = Math.max(1, Math.floor(Math.min(maxW/LOGICAL, maxH/LOGICAL)));
-  return scale;
-}
+/* Fullscreen handling (same as before) */
+function computeScaleForFullscreen(){ const maxW=window.innerWidth,maxH=window.innerHeight; return Math.max(1, Math.floor(Math.min(maxW/LOGICAL, maxH/LOGICAL))); }
 function enterFullscreen(){ if(container.requestFullscreen) container.requestFullscreen(); else if(container.webkitRequestFullscreen) container.webkitRequestFullscreen(); }
 function exitFullscreen(){ if(document.exitFullscreen) document.exitFullscreen(); else if(document.webkitExitFullscreen) document.webkitExitFullscreen(); }
+fsBtn.addEventListener('click', ()=>{ if(!document.fullscreenElement && !document.webkitFullscreenElement) enterFullscreen(); else exitFullscreen(); });
+function updateFullscreenState(){ const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement); if(isFS){ fsPath.setAttribute('d','M5 14H3v6h6v-2H5v-4zm14 6h-6v2h8v-8h-2v6zM3 4v8h2V6h4V4H3zm14 0v2h4v4h2V4h-6z'); SCALE = computeScaleForFullscreen(); } else { fsPath.setAttribute('d','M7 14H5v4h4v-2H7v-2zm10 6h-4v2h6v-6h-2v4zM5 4v6h2V6h2V4H5zm12 0v2h2v2h2V4h-4z'); SCALE = DEFAULT_SCALE; } applyCanvasSize(); }
+document.addEventListener('fullscreenchange', updateFullscreenState); document.addEventListener('webkitfullscreenchange', updateFullscreenState);
+window.addEventListener('resize', ()=>{ if(document.fullscreenElement || document.webkitFullscreenElement){ SCALE = computeScaleForFullscreen(); applyCanvasSize(); } });
 
-fsBtn.addEventListener('click', ()=> {
-  if(!document.fullscreenElement && !document.webkitFullscreenElement) enterFullscreen(); else exitFullscreen();
-});
-function updateFullscreenState(){
-  const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
-  if(isFS){
-    fsPath.setAttribute('d','M5 14H3v6h6v-2H5v-4zm14 6h-6v2h8v-8h-2v6zM3 4v8h2V6h4V4H3zm14 0v2h4v4h2V4h-6z');
-    SCALE = computeScaleForFullscreen();
-  } else {
-    fsPath.setAttribute('d','M7 14H5v4h4v-2H7v-2zm10 6h-4v2h6v-6h-2v4zM5 4v6h2V6h2V4H5zm12 0v2h2v2h2V4h-4z');
-    SCALE = DEFAULT_SCALE;
-  }
-  applyCanvasSize();
-}
-document.addEventListener('fullscreenchange', updateFullscreenState);
-document.addEventListener('webkitfullscreenchange', updateFullscreenState);
-window.addEventListener('resize', ()=> {
-  if(document.fullscreenElement || document.webkitFullscreenElement){
-    SCALE = computeScaleForFullscreen();
-    applyCanvasSize();
-  }
+/* UI events */
+allowLoc.addEventListener('click', ()=> { requestLocationAndWeather(); });
+retryLoc.addEventListener('click', ()=> { requestLocationAndWeather(); });
+searchCity.addEventListener('click', ()=> {
+  const name = cityInput.value.trim();
+  if(!name){ locStatus.textContent = 'Escribe una ciudad.'; return; }
+  geocodeCity(name);
 });
 
-/* ====== Character buttons ====== */
+/* Character select */
 btnMike.addEventListener('click', ()=> { character = 'mike'; btnMike.classList.add('active'); btnSusan.classList.remove('active'); btnMike.setAttribute('aria-checked','true'); btnSusan.setAttribute('aria-checked','false'); });
 btnSusan.addEventListener('click', ()=> { character = 'susan'; btnSusan.classList.add('active'); btnMike.classList.remove('active'); btnSusan.setAttribute('aria-checked','true'); btnMike.setAttribute('aria-checked','false'); });
 
-/* ====== init: request location + loop start ====== */
+/* Init */
 requestLocationAndWeather();
 updateAction();
 loop();
 
-/* If weather state updated by API, update effects & UI */
-setInterval(()=> {
-  // when weather.kind changed by fetchWeatherAt, this triggers updateEffects/badge (some calls inside fetch)
-  if(weather.kind){
-    updateWeatherEffects();
-    updateBadge();
-  }
-}, 2000);
+/* Keep UI badge and effects updated if weather changed externally */
+setInterval(()=> { if(weather.kind){ updateWeatherEffects(); updateBadge(); } }, 2500);
 
 </script>
 </body>
