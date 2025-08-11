@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Mundo Abierto Básico</title>
+<title>Mundo Isométrico Básico</title>
 <style>
   body {
     margin: 0;
@@ -18,14 +18,22 @@
     margin: 20px auto;
     background: #6b8e23; /* suelo */
     border: 3px solid #333;
+    perspective: 800px;
   }
-  .player, .npc {
+  .iso-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transform-style: preserve-3d;
+    /* Rotar para dar efecto isométrico */
+    transform: rotateX(45deg) rotateZ(45deg);
+  }
+  .entity {
     position: absolute;
     width: 40px;
     height: 40px;
-    background-color: #444;
     border-radius: 8px;
-    transition: top 0.1s, left 0.1s;
+    transition: transform 0.1s;
   }
   .player {
     background-color: #0055cc;
@@ -51,8 +59,10 @@
 <body>
 
 <div id="game">
-  <div id="player" class="player" style="top: 220px; left: 300px;"></div>
-  <div id="npc" class="npc" style="top: 200px; left: 400px;"></div>
+  <div class="iso-container">
+    <div id="player" class="entity player"></div>
+    <div id="npc" class="entity npc"></div>
+  </div>
   <div id="dialog"></div>
 </div>
 
@@ -60,16 +70,32 @@
   const player = document.getElementById('player');
   const npc = document.getElementById('npc');
   const dialog = document.getElementById('dialog');
-  const game = document.getElementById('game');
 
-  // Posiciones en px
-  let playerPos = { x: 300, y: 220 };
-  const speed = 5;
+  // Posiciones en "cuadrícula" (no en px directos)
+  let playerGrid = { x: 5, y: 5 };
+  const npcGrid = { x: 8, y: 5 };
+  const gridSize = 40; // tamaño de celda
 
-  // Controles
   const keys = { ArrowUp:false, ArrowDown:false, ArrowLeft:false, ArrowRight:false, w:false, a:false, s:false, d:false };
 
-  window.addEventListener('keydown', (e) => {
+  // Convertir coordenadas grid a posición isométrica en px
+  function gridToIso(x, y) {
+    const isoX = (x - y) * (gridSize / 2);
+    const isoY = (x + y) * (gridSize / 4);
+    return { isoX, isoY };
+  }
+
+  function updatePositions() {
+    // Mover player
+    const p = gridToIso(playerGrid.x, playerGrid.y);
+    player.style.transform = `translate3d(${p.isoX + 250}px, ${p.isoY + 50}px, 0)`;
+
+    // Mover npc
+    const n = gridToIso(npcGrid.x, npcGrid.y);
+    npc.style.transform = `translate3d(${n.isoX + 250}px, ${n.isoY + 50}px, 0)`;
+  }
+
+  window.addEventListener('keydown', e => {
     if (e.key in keys) {
       keys[e.key] = true;
       e.preventDefault();
@@ -78,34 +104,26 @@
       interact();
     }
   });
-  window.addEventListener('keyup', (e) => {
+  window.addEventListener('keyup', e => {
     if (e.key in keys) {
       keys[e.key] = false;
       e.preventDefault();
     }
   });
 
-  // Función para mover jugador
   function movePlayer() {
-    if (keys.ArrowUp || keys.w) playerPos.y -= speed;
-    if (keys.ArrowDown || keys.s) playerPos.y += speed;
-    if (keys.ArrowLeft || keys.a) playerPos.x -= speed;
-    if (keys.ArrowRight || keys.d) playerPos.x += speed;
-
-    // Limitar dentro del contenedor
-    playerPos.x = Math.max(0, Math.min(game.clientWidth - player.clientWidth, playerPos.x));
-    playerPos.y = Math.max(0, Math.min(game.clientHeight - player.clientHeight, playerPos.y));
-
-    player.style.left = playerPos.x + 'px';
-    player.style.top = playerPos.y + 'px';
+    if (keys.ArrowUp || keys.w) playerGrid.y = Math.max(0, playerGrid.y - 1);
+    if (keys.ArrowDown || keys.s) playerGrid.y = Math.min(10, playerGrid.y + 1);
+    if (keys.ArrowLeft || keys.a) playerGrid.x = Math.max(0, playerGrid.x - 1);
+    if (keys.ArrowRight || keys.d) playerGrid.x = Math.min(10, playerGrid.x + 1);
   }
 
-  // Chequear proximidad con NPC para mostrar mensaje de interacción
+  // Chequea si jugador está "cerca" del NPC (grid)
   function checkProximity() {
-    const dx = playerPos.x - parseInt(npc.style.left);
-    const dy = playerPos.y - parseInt(npc.style.top);
-    const distance = Math.sqrt(dx*dx + dy*dy);
-    if (distance < 60) {
+    const dx = playerGrid.x - npcGrid.x;
+    const dy = playerGrid.y - npcGrid.y;
+    const distance = Math.abs(dx) + Math.abs(dy); // distancia Manhattan
+    if (distance <= 1) {
       dialog.innerHTML = '<strong>Presiona "E" para hablar</strong>';
       dialog.style.display = 'block';
       return true;
@@ -115,13 +133,12 @@
     }
   }
 
-  // Función que muestra diálogo de la historia
   let storyStep = 0;
   const storyLines = [
-    "Hola viajero, bienvenido a este mundo.",
-    "Aquí encontrarás misterios y aventuras.",
-    "Tu primer objetivo es encontrar la llave dorada.",
-    "¡Buena suerte!",
+    "Hola viajero, bienvenido a este mundo isométrico.",
+    "Aquí podrás moverte libremente y vivir tu aventura.",
+    "Encuentra la llave mágica para avanzar.",
+    "¡Suerte en tu viaje!",
   ];
 
   function interact() {
@@ -136,13 +153,14 @@
     }
   }
 
-  // Loop del juego
   function gameLoop() {
     movePlayer();
+    updatePositions();
     checkProximity();
     requestAnimationFrame(gameLoop);
   }
 
+  updatePositions();
   gameLoop();
 </script>
 
