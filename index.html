@@ -1,446 +1,558 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pueblo Vivo - Mundo Abierto</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background: linear-gradient(135deg, #87CEEB, #98FB98);
-            font-family: 'Courier New', monospace;
-            overflow: hidden;
-        }
-        
-        #gameCanvas {
-            display: block;
-            margin: 0 auto;
-            border: 2px solid #333;
-            background: #87CEEB;
-            image-rendering: pixelated;
-            image-rendering: -moz-crisp-edges;
-            image-rendering: crisp-edges;
-        }
-        
-        #ui {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            text-shadow: 2px 2px 0px #000;
-            font-size: 14px;
-            z-index: 100;
-        }
-        
-        #interactions {
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0,0,0,0.8);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 10px;
-            font-size: 16px;
-            display: none;
-        }
-        
-        #inventory {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: rgba(0,0,0,0.7);
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            min-width: 150px;
-        }
-        
-        .control-hint {
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            color: white;
-            text-shadow: 2px 2px 0px #000;
-            font-size: 12px;
-        }
-    </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Pixel Scene — Clima & Personaje (Mike/Susan)</title>
+<style>
+  :root{
+    --btn-bg: rgba(0,0,0,0.45);
+    --btn-hover: rgba(255,255,255,0.06);
+    --ui-fg: #fff;
+  }
+  html,body{height:100%;margin:0;background:#000;display:flex;align-items:center;justify-content:center;font-family:Inter,system-ui,Segoe UI,Roboto}
+  #container{position:relative;display:inline-block}
+  canvas{ image-rendering: pixelated; border:4px solid #444; background:#88ccee; display:block }
+  /* fullscreen button */
+  .top-right {
+    position:absolute; top:8px; right:8px; display:flex; gap:8px; align-items:center;
+  }
+  .ui-btn {
+    width:36px; height:36px; border-radius:8px; background:var(--btn-bg);
+    display:grid; place-items:center; border:1px solid rgba(255,255,255,0.06);
+    cursor:pointer; backdrop-filter: blur(4px);
+  }
+  .ui-btn:hover{ transform: translateY(-2px); background:var(--btn-hover) }
+  .sr{ position:absolute !important; height:1px; width:1px; overflow:hidden; clip:rect(1px,1px,1px,1px); white-space:nowrap }
+  /* character selector bottom-left */
+  .char-select {
+    position:absolute; left:8px; bottom:8px; display:flex; gap:8px; align-items:center;
+    background: rgba(0,0,0,0.30); padding:6px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);
+    backdrop-filter: blur(4px);
+  }
+  .char-btn { padding:6px 8px; background:transparent; color:var(--ui-fg); border-radius:8px; cursor:pointer; border:0; font-size:13px }
+  .char-btn.active { background: rgba(255,255,255,0.08) }
+  /* small weather badge top-left */
+  .badge {
+    position:absolute; left:8px; top:8px; padding:6px 8px; border-radius:8px; background: rgba(0,0,0,0.35);
+    font-size:13px; color:var(--ui-fg); border:1px solid rgba(255,255,255,0.04);
+  }
+  .hint { position:absolute; left:50%; transform:translateX(-50%); bottom:8px; color:#ddd; font-size:12px; opacity:0.9; }
+</style>
 </head>
 <body>
-    <div id="ui">
-        <div>Salud: <span id="health">100</span></div>
-        <div>Dinero: $<span id="money">50</span></div>
-        <div>Tiempo: <span id="time">08:00</span></div>
-    </div>
-    
-    <div id="inventory">
-        <h4>Inventario:</h4>
-        <div id="items"></div>
-    </div>
-    
-    <div id="interactions"></div>
-    
-    <canvas id="gameCanvas" width="1000" height="700"></canvas>
-    
-    <div class="control-hint">
-        WASD: Mover | E: Interactuar | Espacio: Correr
+  <div id="container" aria-label="Escenario pixel art interactivo">
+    <canvas id="game"></canvas>
+
+    <div class="top-right" role="group" aria-label="Controles">
+      <button id="fsBtn" class="ui-btn" title="Pantalla completa" aria-label="Pantalla completa"><svg viewBox="0 0 24 24" width="18" height="18" fill="#fff"><path id="fsPath" d="M7 14H5v4h4v-2H7v-2zm10 6h-4v2h6v-6h-2v4zM5 4v6h2V6h2V4H5zm12 0v2h2v2h2V4h-4z"/></svg></button>
     </div>
 
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        
-        // Estado del juego
-        const game = {
-            time: 480, // minutos desde medianoche (8:00 AM)
-            money: 50,
-            health: 100,
-            inventory: [],
-            currentInteraction: null
-        };
-        
-        // Control de teclas
-        const keys = {};
-        
-        // Jugador
-        const player = {
-            x: 400,
-            y: 300,
-            width: 24,
-            height: 32,
-            speed: 2,
-            running: false,
-            direction: 'down',
-            animFrame: 0,
-            animTimer: 0
-        };
-        
-        // Cámara
-        const camera = {
-            x: 0,
-            y: 0
-        };
-        
-        // NPCs y vehículos
-        const npcs = [
-            { x: 200, y: 200, width: 20, height: 30, type: 'person', name: 'María', color: '#FF69B4', task: 'walking', targetX: 250, targetY: 200, speed: 0.5 },
-            { x: 600, y: 150, width: 20, height: 30, type: 'person', name: 'José', color: '#4169E1', task: 'waiting', speed: 0.3 },
-            { x: 100, y: 400, width: 60, height: 30, type: 'car', name: 'Coche Azul', color: '#1E90FF', task: 'parked', speed: 1 },
-            { x: 300, y: 500, width: 50, height: 25, type: 'bike', name: 'Bicicleta', color: '#FF6347', task: 'parked', speed: 2 }
-        ];
-        
-        // Edificios y elementos interactivos
-        const buildings = [
-            { x: 50, y: 50, width: 120, height: 100, type: 'house', name: 'Casa de María', color: '#8B4513', roof: '#654321' },
-            { x: 250, y: 80, width: 100, height: 80, type: 'shop', name: 'Tienda', color: '#DC143C', roof: '#B22222' },
-            { x: 450, y: 60, width: 150, height: 120, type: 'house', name: 'Casa Grande', color: '#228B22', roof: '#006400' },
-            { x: 700, y: 100, width: 80, height: 90, type: 'church', name: 'Iglesia', color: '#F5F5DC', roof: '#D2691E' },
-            { x: 150, y: 350, width: 60, height: 40, type: 'fountain', name: 'Fuente', color: '#4682B4' },
-            { x: 500, y: 400, width: 40, height: 60, type: 'tree', name: 'Árbol', color: '#228B22' },
-            { x: 600, y: 350, width: 40, height: 60, type: 'tree', name: 'Árbol', color: '#32CD32' },
-            { x: 350, y: 300, width: 80, height: 50, type: 'bench', name: 'Banco', color: '#8B4513' }
-        ];
-        
-        // Sistema de interacciones
-        const interactions = {
-            'Tienda': () => showInteraction('¡Bienvenido a la tienda! ¿Quieres comprar algo? (Presiona E otra vez)'),
-            'Casa de María': () => showInteraction('Esta es la casa de María. Parece que no está en casa.'),
-            'Casa Grande': () => showInteraction('Una casa muy elegante. Debe vivir alguien importante aquí.'),
-            'Iglesia': () => showInteraction('Un lugar de paz y tranquilidad.'),
-            'Fuente': () => {
-                game.health = Math.min(100, game.health + 5);
-                showInteraction('Bebes agua fresca de la fuente. +5 salud');
-            },
-            'Árbol': () => {
-                if (Math.random() > 0.7) {
-                    addToInventory('Manzana');
-                    showInteraction('¡Encontraste una manzana en el árbol!');
-                } else {
-                    showInteraction('Este árbol no tiene frutos maduros.');
-                }
-            },
-            'Banco': () => {
-                game.health = Math.min(100, game.health + 2);
-                showInteraction('Te sientas a descansar en el banco. +2 salud');
-            },
-            'María': () => showInteraction('María: "¡Hola! ¿Cómo estás? Estoy dando un paseo por el pueblo."'),
-            'José': () => showInteraction('José: "Buenos días. ¿Has visto mi gato? Se llama Whiskers."'),
-            'Coche Azul': () => showInteraction('Un coche bien cuidado. Las llaves no están puestas.'),
-            'Bicicleta': () => {
-                if (game.money >= 10) {
-                    game.money -= 10;
-                    player.speed = 4;
-                    showInteraction('Alquilas la bicicleta por $10. ¡Ahora te mueves más rápido!');
-                } else {
-                    showInteraction('Necesitas $10 para alquilar la bicicleta.');
-                }
-            }
-        };
-        
-        function addToInventory(item) {
-            game.inventory.push(item);
-            updateInventoryDisplay();
-        }
-        
-        function updateInventoryDisplay() {
-            const itemsDiv = document.getElementById('items');
-            itemsDiv.innerHTML = game.inventory.length > 0 ? 
-                game.inventory.join(', ') : 'Vacío';
-        }
-        
-        function showInteraction(text) {
-            const interactionDiv = document.getElementById('interactions');
-            interactionDiv.textContent = text;
-            interactionDiv.style.display = 'block';
-            setTimeout(() => {
-                interactionDiv.style.display = 'none';
-            }, 3000);
-        }
-        
-        function updateNPCs() {
-            npcs.forEach(npc => {
-                if (npc.task === 'walking' && npc.type === 'person') {
-                    const dx = npc.targetX - npc.x;
-                    const dy = npc.targetY - npc.y;
-                    const distance = Math.sqrt(dx*dx + dy*dy);
-                    
-                    if (distance > 5) {
-                        npc.x += (dx / distance) * npc.speed;
-                        npc.y += (dy / distance) * npc.speed;
-                    } else {
-                        // Cambiar objetivo aleatoriamente
-                        npc.targetX = Math.random() * canvas.width;
-                        npc.targetY = Math.random() * canvas.height;
-                    }
-                }
-            });
-        }
-        
-        function updateTime() {
-            game.time += 0.1; // El tiempo pasa lentamente
-            if (game.time >= 1440) game.time = 0; // Reset a medianoche
-            
-            const hours = Math.floor(game.time / 60);
-            const minutes = Math.floor(game.time % 60);
-            document.getElementById('time').textContent = 
-                `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-        }
-        
-        function updateUI() {
-            document.getElementById('health').textContent = game.health;
-            document.getElementById('money').textContent = game.money;
-        }
-        
-        function checkCollision(rect1, rect2) {
-            return rect1.x < rect2.x + rect2.width &&
-                   rect1.x + rect1.width > rect2.x &&
-                   rect1.y < rect2.y + rect2.height &&
-                   rect1.y + rect1.height > rect2.y;
-        }
-        
-        function findNearestInteractable() {
-            const interactionDistance = 50;
-            
-            // Verificar edificios
-            for (let building of buildings) {
-                const distance = Math.sqrt(
-                    Math.pow(player.x - (building.x + building.width/2), 2) +
-                    Math.pow(player.y - (building.y + building.height/2), 2)
-                );
-                if (distance < interactionDistance) {
-                    return building.name;
-                }
-            }
-            
-            // Verificar NPCs
-            for (let npc of npcs) {
-                const distance = Math.sqrt(
-                    Math.pow(player.x - npc.x, 2) +
-                    Math.pow(player.y - npc.y, 2)
-                );
-                if (distance < interactionDistance) {
-                    return npc.name;
-                }
-            }
-            
-            return null;
-        }
-        
-        function drawPixelatedRect(x, y, width, height, color) {
-            ctx.fillStyle = color;
-            ctx.fillRect(Math.floor(x), Math.floor(y), Math.floor(width), Math.floor(height));
-        }
-        
-        function drawBuilding(building) {
-            // Sombra
-            drawPixelatedRect(building.x + 3, building.y + 3, building.width, building.height, 'rgba(0,0,0,0.3)');
-            
-            // Edificio principal
-            drawPixelatedRect(building.x, building.y, building.width, building.height, building.color);
-            
-            // Techo (si existe)
-            if (building.roof) {
-                drawPixelatedRect(building.x - 5, building.y - 10, building.width + 10, 15, building.roof);
-            }
-            
-            // Detalles según el tipo
-            if (building.type === 'house') {
-                // Puerta
-                drawPixelatedRect(building.x + building.width/2 - 8, building.y + building.height - 20, 16, 20, '#654321');
-                // Ventanas
-                drawPixelatedRect(building.x + 10, building.y + 20, 15, 15, '#87CEEB');
-                drawPixelatedRect(building.x + building.width - 25, building.y + 20, 15, 15, '#87CEEB');
-            } else if (building.type === 'shop') {
-                // Puerta más grande
-                drawPixelatedRect(building.x + building.width/2 - 12, building.y + building.height - 25, 24, 25, '#8B4513');
-                // Letrero
-                drawPixelatedRect(building.x + 10, building.y + 10, building.width - 20, 15, '#FFD700');
-            } else if (building.type === 'fountain') {
-                // Agua
-                drawPixelatedRect(building.x + 5, building.y + 5, building.width - 10, building.height - 10, '#00BFFF');
-            } else if (building.type === 'tree') {
-                // Tronco
-                drawPixelatedRect(building.x + building.width/2 - 5, building.y + building.height - 20, 10, 20, '#8B4513');
-                // Hojas (círculo pixelado)
-                drawPixelatedRect(building.x, building.y, building.width, building.height - 20, building.color);
-            }
-        }
-        
-        function drawNPC(npc) {
-            // Sombra
-            drawPixelatedRect(npc.x + 2, npc.y + 2, npc.width, npc.height, 'rgba(0,0,0,0.3)');
-            
-            if (npc.type === 'person') {
-                // Cuerpo
-                drawPixelatedRect(npc.x, npc.y, npc.width, npc.height, npc.color);
-                // Cabeza
-                drawPixelatedRect(npc.x + 2, npc.y - 8, npc.width - 4, 10, '#FDBCB4');
-            } else if (npc.type === 'car') {
-                // Coche
-                drawPixelatedRect(npc.x, npc.y, npc.width, npc.height, npc.color);
-                // Ventanas
-                drawPixelatedRect(npc.x + 5, npc.y + 5, npc.width - 10, npc.height - 10, '#87CEEB');
-                // Ruedas
-                drawPixelatedRect(npc.x - 2, npc.y + npc.height - 8, 8, 8, '#333');
-                drawPixelatedRect(npc.x + npc.width - 6, npc.y + npc.height - 8, 8, 8, '#333');
-            } else if (npc.type === 'bike') {
-                // Bicicleta
-                drawPixelatedRect(npc.x, npc.y, npc.width, npc.height, npc.color);
-                // Ruedas
-                drawPixelatedRect(npc.x + 5, npc.y + npc.height - 6, 6, 6, '#333');
-                drawPixelatedRect(npc.x + npc.width - 11, npc.y + npc.height - 6, 6, 6, '#333');
-            }
-        }
-        
-        function drawPlayer() {
-            // Sombra
-            drawPixelatedRect(player.x + 2, player.y + 2, player.width, player.height, 'rgba(0,0,0,0.3)');
-            
-            // Cuerpo del jugador
-            drawPixelatedRect(player.x, player.y, player.width, player.height, '#FF4500');
-            
-            // Cabeza
-            drawPixelatedRect(player.x + 4, player.y - 8, player.width - 8, 10, '#FDBCB4');
-            
-            // Animación simple de caminar
-            if (keys['w'] || keys['a'] || keys['s'] || keys['d']) {
-                player.animTimer++;
-                if (player.animTimer > 10) {
-                    player.animFrame = (player.animFrame + 1) % 2;
-                    player.animTimer = 0;
-                }
-                
-                // Piernas moviéndose
-                const legOffset = player.animFrame === 0 ? 0 : 2;
-                drawPixelatedRect(player.x + 2 + legOffset, player.y + player.height - 8, 6, 8, '#000080');
-                drawPixelatedRect(player.x + player.width - 8 - legOffset, player.y + player.height - 8, 6, 8, '#000080');
-            } else {
-                // Piernas estáticas
-                drawPixelatedRect(player.x + 4, player.y + player.height - 8, 6, 8, '#000080');
-                drawPixelatedRect(player.x + player.width - 10, player.y + player.height - 8, 6, 8, '#000080');
-            }
-        }
-        
-        function drawGrass() {
-            // Pasto base
-            ctx.fillStyle = '#32CD32';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Textura de pasto (puntos aleatorios)
-            ctx.fillStyle = '#228B22';
-            for (let i = 0; i < 200; i++) {
-                const x = Math.random() * canvas.width;
-                const y = Math.random() * canvas.height;
-                ctx.fillRect(x, y, 2, 2);
-            }
-            
-            // Caminos
-            ctx.fillStyle = '#D2691E';
-            ctx.fillRect(180, 180, 400, 20); // Horizontal
-            ctx.fillRect(300, 0, 20, canvas.height); // Vertical
-        }
-        
-        function gameLoop() {
-            // Limpiar canvas
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // Dibujar fondo
-            drawGrass();
-            
-            // Actualizar NPCs
-            updateNPCs();
-            
-            // Actualizar tiempo
-            updateTime();
-            
-            // Manejar controles
-            player.running = keys[' '];
-            const currentSpeed = player.running ? player.speed * 1.5 : player.speed;
-            
-            if (keys['w']) player.y -= currentSpeed;
-            if (keys['s']) player.y += currentSpeed;
-            if (keys['a']) player.x -= currentSpeed;
-            if (keys['d']) player.x += currentSpeed;
-            
-            // Mantener jugador en pantalla
-            player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
-            player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
-            
-            // Dibujar edificios
-            buildings.forEach(drawBuilding);
-            
-            // Dibujar NPCs
-            npcs.forEach(drawNPC);
-            
-            // Dibujar jugador
-            drawPlayer();
-            
-            // Actualizar UI
-            updateUI();
-            
-            requestAnimationFrame(gameLoop);
-        }
-        
-        // Event listeners
-        document.addEventListener('keydown', (e) => {
-            keys[e.key.toLowerCase()] = true;
-            
-            if (e.key.toLowerCase() === 'e') {
-                const nearest = findNearestInteractable();
-                if (nearest && interactions[nearest]) {
-                    interactions[nearest]();
-                }
-            }
+    <div class="badge" id="weatherBadge" aria-live="polite">Detectando clima…</div>
+
+    <div class="char-select" role="radiogroup" aria-label="Seleccionar personaje">
+      <button id="btnMike" class="char-btn active" role="radio" aria-checked="true">Mike</button>
+      <button id="btnSusan" class="char-btn" role="radio" aria-checked="false">Susan</button>
+    </div>
+
+    <div class="hint">Permite ubicación para adaptar el clima. — Puedes cambiar personaje en la esquina inferior izquierda.</div>
+  </div>
+
+<script>
+/* ====== CONFIG ====== */
+const LOGICAL = 64;
+const DEFAULT_SCALE = 4;
+let SCALE = DEFAULT_SCALE;
+const canvas = document.getElementById('game');
+const container = document.getElementById('container');
+const ctx = canvas.getContext('2d');
+
+function applyCanvasSize(){
+  const px = LOGICAL * SCALE;
+  canvas.width = px; canvas.height = px;
+  canvas.style.width = px + 'px'; canvas.style.height = px + 'px';
+  ctx.imageSmoothingEnabled = false;
+}
+applyCanvasSize();
+
+/* ====== STATE ====== */
+let frame = 0;
+let action = 'idle';
+let actionTime = 0;
+let dir = 1;
+let posX = 20;
+const groundY = 44;
+let jumpOffset = 0, armOffset = 0, legOffset = 0, scratchOffset = 0;
+
+/* clouds */
+const clouds = [
+  { x: 4, y:8, speed:0.02, w:12 },
+  { x: 30, y:6, speed:0.03, w:14 },
+  { x: 50, y:10, speed:0.018, w:10 }
+];
+
+/* weather state (controlled by API or fallback) */
+let weather = { kind: 'unknown', temp: null, desc: '—' }; // kinds: clear, partly, cloudy, rain, snow, fog, thunder, unknown
+
+/* effects arrays */
+let rainDrops = [];
+let snowFlakes = [];
+let fogAlpha = 0;
+
+/* character choice */
+let character = 'mike'; // 'mike' or 'susan'
+
+/* UI elements */
+const weatherBadge = document.getElementById('weatherBadge');
+const btnMike = document.getElementById('btnMike');
+const btnSusan = document.getElementById('btnSusan');
+const fsBtn = document.getElementById('fsBtn');
+const fsPath = document.getElementById('fsPath');
+
+/* ====== UTIL: weathercode -> kind ====== */
+function mapWeatherCode(code){
+  // Open-Meteo codes: https://open-meteo.com/en/docs
+  if(code === 0) return 'clear';
+  if(code === 1 || code === 2) return 'partly';
+  if(code === 3) return 'cloudy';
+  if([45,48].includes(code)) return 'fog';
+  if([51,53,55,56,57].includes(code)) return 'drizzle';
+  if([61,63,65,66,67,80,81,82].includes(code)) return 'rain';
+  if([71,73,75,77,85,86].includes(code)) return 'snow';
+  if([95,96,99].includes(code)) return 'thunder';
+  return 'unknown';
+}
+
+/* ====== Weather fetch using Open-Meteo (no API key) ====== */
+async function fetchWeatherAt(lat, lon){
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+                `&current_weather=true&timezone=auto`;
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    if(j && j.current_weather){
+      const cw = j.current_weather;
+      const kind = mapWeatherCode(cw.weathercode);
+      weather = { kind, temp: cw.temperature, desc: cw.weathercode };
+      updateWeatherEffects();
+      updateBadge();
+    } else {
+      weather = { kind: 'unknown', temp: null, desc: '—' };
+      updateBadge();
+    }
+  } catch (err) {
+    console.error('Weather fetch error', err);
+    weather = { kind: 'unknown', temp: null, desc: 'error' };
+    updateBadge();
+  }
+}
+
+/* ====== Geolocation request ====== */
+function requestLocationAndWeather(){
+  if(!navigator.geolocation){
+    weatherBadge.textContent = 'Geolocalización no soportada — mostrando clima local (estimado)';
+    return;
+  }
+  weatherBadge.textContent = 'Solicitando ubicación…';
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const { latitude, longitude } = pos.coords;
+    weatherBadge.textContent = 'Obteniendo clima…';
+    await fetchWeatherAt(latitude, longitude);
+  }, err => {
+    console.warn('geolocation denied or failed', err);
+    weatherBadge.textContent = 'Ubicación denegada — usando hora local';
+    // fallback: keep default (only time-of-day effects)
+  }, { timeout: 10000 });
+}
+
+/* ====== Adjust visual effects per weather ====== */
+function updateWeatherEffects(){
+  rainDrops = []; snowFlakes = []; fogAlpha = 0;
+  switch(weather.kind){
+    case 'rain':
+    case 'drizzle':
+    case 'thunder':
+      // spawn raindrops
+      for(let i=0;i<160;i++){
+        rainDrops.push({
+          x: Math.random()*LOGICAL,
+          y: Math.random()*LOGICAL,
+          l: 1 + Math.random()*2,
+          speed: 0.8 + Math.random()*1.6
         });
-        
-        document.addEventListener('keyup', (e) => {
-            keys[e.key.toLowerCase()] = false;
+      }
+      break;
+    case 'snow':
+      for(let i=0;i<120;i++){
+        snowFlakes.push({
+          x: Math.random()*LOGICAL,
+          y: Math.random()*LOGICAL,
+          r: 0.7 + Math.random()*1.6,
+          speed: 0.2 + Math.random()*0.7
         });
-        
-        // Inicializar
-        updateInventoryDisplay();
-        gameLoop();
-    </script>
+      }
+      break;
+    case 'fog':
+      fogAlpha = 0.28;
+      break;
+    case 'partly':
+    case 'cloudy':
+      // more/denser clouds
+      break;
+    case 'clear':
+    default:
+      // clear sky minimal effects
+      break;
+  }
+}
+
+/* ====== DIBUJO: background, sun/moon, clouds, tree, ground ====== */
+function getTimeOfDay(){
+  const now = new Date();
+  const h = now.getHours();
+  if(h >=6 && h <12) return 'morning';
+  if(h >=12 && h <18) return 'afternoon';
+  if(h >=18 && h <21) return 'evening';
+  return 'night';
+}
+function computeSunMoonPos(){
+  const now = new Date();
+  const hour = now.getHours() + now.getMinutes()/60;
+  let sunVisible = (hour >=6 && hour <=18);
+  let t, x, y;
+  if(sunVisible){
+    t = (hour - 6) / 12;
+    x = 6 + t*(LOGICAL-12);
+    y = 6 + Math.sin(t*Math.PI)*10;
+    return { sun:true, x, y };
+  } else {
+    let hh = hour; if(hh < 6) hh += 24;
+    t = (hh - 18) / 12;
+    x = 6 + t*(LOGICAL-12);
+    y = 6 + Math.sin(t*Math.PI)*10;
+    return { sun:false, x, y };
+  }
+}
+
+function drawBackground(timeOfDay){
+  // base sky
+  if(timeOfDay === 'morning') ctx.fillStyle = '#bfefff';
+  else if(timeOfDay === 'afternoon') ctx.fillStyle = '#9fe3ff';
+  else if(timeOfDay === 'evening') ctx.fillStyle = '#ffb86b';
+  else ctx.fillStyle = '#07122a';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // evening multi-band
+  if(timeOfDay === 'evening'){
+    ctx.save();
+    const bandH = canvas.height/6;
+    ctx.fillStyle = '#ffd89b'; ctx.fillRect(0,0,canvas.width,bandH);
+    ctx.fillStyle = '#ffb86b'; ctx.fillRect(0,bandH,canvas.width,bandH*2);
+    ctx.fillStyle = '#9b67d3'; ctx.fillRect(0,bandH*3,canvas.width,bandH*3);
+    ctx.restore();
+  }
+
+  // sun/moon
+  const pos = computeSunMoonPos();
+  ctx.save(); ctx.scale(SCALE,SCALE);
+  if(pos.sun){
+    ctx.fillStyle = '#FFF3A6'; ctx.fillRect(Math.round(pos.x)-1,Math.round(pos.y)-1,8,8);
+    ctx.fillStyle = '#FFD24D'; ctx.fillRect(Math.round(pos.x),Math.round(pos.y),6,6);
+  } else {
+    ctx.fillStyle = '#f7f9ff'; ctx.fillRect(Math.round(pos.x),Math.round(pos.y),6,6);
+    // bite
+    ctx.fillStyle = (timeOfDay === 'night') ? '#07122a' : '#9b67d3';
+    ctx.fillRect(Math.round(pos.x)+2,Math.round(pos.y)+1,3,3);
+  }
+  ctx.restore();
+}
+
+function drawCloud(cx, cy, w, timeOfDay){
+  ctx.save(); ctx.scale(SCALE,SCALE);
+  ctx.fillStyle = (timeOfDay === 'night') ? 'rgba(255,255,255,0.12)' : '#ffffff';
+  // make denser if weather is cloudy/partly
+  const alpha = (weather.kind === 'cloudy' || weather.kind === 'partly') ? 1.0 : 1.0;
+  ctx.globalAlpha = alpha;
+  ctx.fillRect(cx, cy+1, w-2, 2);
+  ctx.fillRect(cx+1, cy, w-4, 2);
+  ctx.fillRect(cx+Math.floor(w/2)-1, cy-1, 3, 2);
+  ctx.restore();
+}
+
+function drawTree(timeOfDay){
+  ctx.save(); ctx.scale(SCALE,SCALE);
+  ctx.fillStyle = (timeOfDay === 'night') ? '#472b16' : '#6b3b1a';
+  ctx.fillRect(3, groundY - 8, 2, 6);
+  ctx.fillStyle = (timeOfDay === 'night') ? '#1f3f1f' : '#2e8b2e';
+  ctx.fillRect(0, groundY - 14, 8, 3);
+  ctx.fillRect(1, groundY - 17, 6, 3);
+  ctx.fillRect(2, groundY - 19, 4, 2);
+  ctx.fillStyle = (timeOfDay === 'night') ? '#2c5e2c' : '#57b957';
+  ctx.fillRect(4, groundY - 16, 2, 1);
+  ctx.restore();
+}
+
+function drawGround(timeOfDay){
+  ctx.save(); ctx.scale(SCALE,SCALE);
+  ctx.fillStyle = (timeOfDay === 'night') ? '#334d36' : '#7bc36a';
+  ctx.fillRect(0, groundY, LOGICAL, LOGICAL - groundY);
+  ctx.fillStyle = (timeOfDay === 'night') ? '#2a3f2b' : '#5fa854';
+  ctx.fillRect(0, groundY + 4, LOGICAL, LOGICAL - (groundY+4));
+  ctx.restore();
+}
+
+/* ====== Character draw (Mike / Susan) ====== */
+function drawCharacter(px, py, timeOfDay){
+  ctx.save(); ctx.scale(SCALE,SCALE); ctx.translate(px, py - jumpOffset);
+  // shadow
+  ctx.fillStyle = (timeOfDay === 'night') ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.12)';
+  ctx.fillRect(12,26,8,1);
+
+  // skin
+  ctx.fillStyle = '#FFD27F'; ctx.fillRect(12,4,8,8);
+
+  // hair differences:
+  if(character === 'mike'){
+    ctx.fillStyle = (timeOfDay === 'night') ? '#1f2439' : '#2a2f4a';
+    ctx.fillRect(12,4,8,2); // short hair
+  } else { // susan: longer hair side pixel
+    ctx.fillStyle = (timeOfDay === 'night') ? '#2b1f35' : '#6b2b6b';
+    ctx.fillRect(11,4,10,2);
+    ctx.fillRect(11,6,1,4);
+  }
+
+  // eyes (blink)
+  ctx.fillStyle = '#000';
+  if(!(action === 'blink' && Math.floor(frame/10)%2 === 0)){
+    ctx.fillRect(14,6,1,1); ctx.fillRect(17,6,1,1);
+  }
+
+  // mouth
+  ctx.fillStyle = '#9b3a3a'; ctx.fillRect(15,9,2,1);
+
+  // body color differences
+  if(character === 'mike'){
+    ctx.fillStyle = (timeOfDay === 'night') ? '#25407a' : '#3366cc';
+    ctx.fillRect(10,12,12,8);
+    ctx.fillStyle = (timeOfDay === 'night') ? '#213560' : '#2b55a1';
+    ctx.fillRect(12,14,8,4);
+  } else {
+    // susan shirt pink
+    ctx.fillStyle = (timeOfDay === 'night') ? '#7a3a5a' : '#ff77bb';
+    ctx.fillRect(10,12,12,8);
+    ctx.fillStyle = (timeOfDay === 'night') ? '#5a2a43' : '#d64b95';
+    ctx.fillRect(12,14,8,4);
+  }
+
+  // arms (and scratch)
+  ctx.fillStyle = '#FFD27F';
+  ctx.fillRect(8,12+Math.round(armOffset),2,6);
+  if(action === 'scratch'){
+    ctx.fillRect(22,8+Math.round(scratchOffset),2,6);
+  } else {
+    ctx.fillRect(22,12-Math.round(armOffset),2,6);
+  }
+
+  // legs + boots
+  ctx.fillStyle = (timeOfDay === 'night') ? '#2b2b2b' : '#444';
+  ctx.fillRect(12,20-Math.round(legOffset),3,6);
+  ctx.fillRect(17,20+Math.round(legOffset),3,6);
+  ctx.fillStyle = '#111'; ctx.fillRect(12,25,3,1); ctx.fillRect(17,25,3,1);
+
+  ctx.restore();
+}
+
+/* ====== Weather effect draws ====== */
+function drawRain(){
+  ctx.save(); ctx.scale(SCALE,SCALE);
+  ctx.fillStyle = 'rgba(180,210,255,0.85)';
+  for(const r of rainDrops){
+    ctx.fillRect(Math.round(r.x), Math.round(r.y), 1, Math.ceil(r.l));
+  }
+  ctx.restore();
+}
+function updateRain(){
+  for(const r of rainDrops){
+    r.y += r.speed;
+    r.x -= 0.1; // slight wind
+    if(r.y > LOGICAL + 2){ r.y = -2; r.x = Math.random()*LOGICAL; }
+  }
+}
+function drawSnow(){
+  ctx.save(); ctx.scale(SCALE,SCALE);
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  for(const s of snowFlakes){
+    ctx.fillRect(Math.round(s.x), Math.round(s.y), Math.ceil(s.r), Math.ceil(s.r));
+  }
+  ctx.restore();
+}
+function updateSnow(){
+  for(const s of snowFlakes){
+    s.y += s.speed;
+    s.x += Math.sin(frame/30 + s.x)*0.1;
+    if(s.y > LOGICAL+2){ s.y = -2; s.x = Math.random()*LOGICAL; }
+  }
+}
+function drawFog(){
+  if(fogAlpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = fogAlpha;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.restore();
+}
+
+/* ====== ACTIONS ====== */
+function updateAction(){
+  const actions = ['idle','walk','blink','scratch','jump'];
+  action = actions[Math.floor(Math.random()*actions.length)];
+  actionTime = 60 + Math.floor(Math.random()*90);
+  if(action === 'walk' && Math.random() > 0.6) dir *= -1;
+}
+
+/* ====== MAIN LOOP ====== */
+function loop(){
+  frame++;
+  const timeOfDay = getTimeOfDay();
+
+  // clouds move (slower at night)
+  for(const c of clouds){
+    c.x += c.speed * (timeOfDay === 'night' ? 0.6 : 1);
+    if(c.x > LOGICAL + c.w) c.x = -c.w - 2;
+  }
+
+  if(actionTime > 0) actionTime--; else updateAction();
+
+  if(action === 'walk'){
+    posX += 0.12 * dir;
+    armOffset = Math.sin(frame/6)*1.2;
+    legOffset = Math.sin(frame/6)*1.6;
+  } else { armOffset = 0; legOffset = 0; }
+
+  scratchOffset = (action === 'scratch') ? Math.sin(frame/4)*2 : 0;
+  jumpOffset = (action === 'jump') ? Math.abs(Math.sin(frame/6)*4)*(Math.sin(frame/6)>0?1:0) : 0;
+
+  // keep inside
+  const leftLimit = 6, rightLimit = LOGICAL - 20;
+  if(posX < leftLimit){ posX = leftLimit; dir = 1; }
+  if(posX > rightLimit){ posX = rightLimit; dir = -1; }
+
+  // update weather particle physics
+  if(rainDrops.length) updateRain();
+  if(snowFlakes.length) updateSnow();
+
+  // draw scene
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawBackground(timeOfDay);
+
+  // stars for night (soft)
+  if(timeOfDay === 'night'){
+    drawStarsForNight();
+  } else if(timeOfDay === 'evening'){
+    ctx.save(); ctx.globalAlpha = 0.25; drawStarsForNight(); ctx.restore();
+  }
+
+  // clouds
+  for(const c of clouds) drawCloud(Math.round(c.x), Math.round(c.y), c.w, timeOfDay);
+
+  // tree and ground
+  drawTree(timeOfDay);
+  drawGround(timeOfDay);
+
+  // weather effects draw
+  if(rainDrops.length) drawRain();
+  if(snowFlakes.length) drawSnow();
+  if(fogAlpha > 0) drawFog();
+
+  // character
+  drawCharacter(Math.round(posX), groundY - 28, timeOfDay);
+
+  requestAnimationFrame(loop);
+}
+
+/* small stars function reused */
+const stars = (() => {
+  const arr = [];
+  for(let i=0;i<60;i++){
+    arr.push({ x: Math.random() * (LOGICAL - 6) + 3, y: Math.random() * (groundY - 20) + 2, r: Math.random() > 0.85 ? 1.5 : 1 });
+  }
+  return arr;
+})();
+function drawStarsForNight(){
+  ctx.save(); ctx.scale(SCALE,SCALE); ctx.fillStyle = '#ffffff';
+  for(const s of stars) ctx.fillRect(Math.round(s.x), Math.round(s.y), s.r, s.r);
+  ctx.restore();
+}
+
+/* ====== badge update ====== */
+function updateBadge(){
+  const t = weather.temp !== null ? `${Math.round(weather.temp)}°C` : '';
+  let label = '';
+  switch(weather.kind){
+    case 'clear': label = 'Despejado'; break;
+    case 'partly': label = 'Parcial'; break;
+    case 'cloudy': label = 'Nublado'; break;
+    case 'rain': label = 'Lluvia'; break;
+    case 'drizzle': label = 'Llovizna'; break;
+    case 'snow': label = 'Nieve'; break;
+    case 'fog': label = 'Niebla'; break;
+    case 'thunder': label = 'Tormenta'; break;
+    default: label = 'Hora local';
+  }
+  weatherBadge.textContent = `${label} ${t}`;
+}
+
+/* ====== Fullscreen & integer scaling ====== */
+function computeScaleForFullscreen(){
+  const maxW = window.innerWidth, maxH = window.innerHeight;
+  const scale = Math.max(1, Math.floor(Math.min(maxW/LOGICAL, maxH/LOGICAL)));
+  return scale;
+}
+function enterFullscreen(){ if(container.requestFullscreen) container.requestFullscreen(); else if(container.webkitRequestFullscreen) container.webkitRequestFullscreen(); }
+function exitFullscreen(){ if(document.exitFullscreen) document.exitFullscreen(); else if(document.webkitExitFullscreen) document.webkitExitFullscreen(); }
+
+fsBtn.addEventListener('click', ()=> {
+  if(!document.fullscreenElement && !document.webkitFullscreenElement) enterFullscreen(); else exitFullscreen();
+});
+function updateFullscreenState(){
+  const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  if(isFS){
+    fsPath.setAttribute('d','M5 14H3v6h6v-2H5v-4zm14 6h-6v2h8v-8h-2v6zM3 4v8h2V6h4V4H3zm14 0v2h4v4h2V4h-6z');
+    SCALE = computeScaleForFullscreen();
+  } else {
+    fsPath.setAttribute('d','M7 14H5v4h4v-2H7v-2zm10 6h-4v2h6v-6h-2v4zM5 4v6h2V6h2V4H5zm12 0v2h2v2h2V4h-4z');
+    SCALE = DEFAULT_SCALE;
+  }
+  applyCanvasSize();
+}
+document.addEventListener('fullscreenchange', updateFullscreenState);
+document.addEventListener('webkitfullscreenchange', updateFullscreenState);
+window.addEventListener('resize', ()=> {
+  if(document.fullscreenElement || document.webkitFullscreenElement){
+    SCALE = computeScaleForFullscreen();
+    applyCanvasSize();
+  }
+});
+
+/* ====== Character buttons ====== */
+btnMike.addEventListener('click', ()=> { character = 'mike'; btnMike.classList.add('active'); btnSusan.classList.remove('active'); btnMike.setAttribute('aria-checked','true'); btnSusan.setAttribute('aria-checked','false'); });
+btnSusan.addEventListener('click', ()=> { character = 'susan'; btnSusan.classList.add('active'); btnMike.classList.remove('active'); btnSusan.setAttribute('aria-checked','true'); btnMike.setAttribute('aria-checked','false'); });
+
+/* ====== init: request location + loop start ====== */
+requestLocationAndWeather();
+updateAction();
+loop();
+
+/* If weather state updated by API, update effects & UI */
+setInterval(()=> {
+  // when weather.kind changed by fetchWeatherAt, this triggers updateEffects/badge (some calls inside fetch)
+  if(weather.kind){
+    updateWeatherEffects();
+    updateBadge();
+  }
+}, 2000);
+
+</script>
 </body>
 </html>
