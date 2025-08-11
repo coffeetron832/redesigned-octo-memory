@@ -1,16 +1,446 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Mi juego isométrico - Proto</title>
-  <link rel="stylesheet" href="public/css/styles.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pueblo Vivo - Mundo Abierto</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #87CEEB, #98FB98);
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+        
+        #gameCanvas {
+            display: block;
+            margin: 0 auto;
+            border: 2px solid #333;
+            background: #87CEEB;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            text-shadow: 2px 2px 0px #000;
+            font-size: 14px;
+            z-index: 100;
+        }
+        
+        #interactions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 16px;
+            display: none;
+        }
+        
+        #inventory {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            min-width: 150px;
+        }
+        
+        .control-hint {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            text-shadow: 2px 2px 0px #000;
+            font-size: 12px;
+        }
+    </style>
 </head>
 <body>
-  <div id="ui">
-    <div id="hud">WASD / Flechas — Mover</div>
-  </div>
-  <canvas id="gameCanvas" width="960" height="640"></canvas>
-  <script type="module" src="public/js/main.js"></script>
+    <div id="ui">
+        <div>Salud: <span id="health">100</span></div>
+        <div>Dinero: $<span id="money">50</span></div>
+        <div>Tiempo: <span id="time">08:00</span></div>
+    </div>
+    
+    <div id="inventory">
+        <h4>Inventario:</h4>
+        <div id="items"></div>
+    </div>
+    
+    <div id="interactions"></div>
+    
+    <canvas id="gameCanvas" width="1000" height="700"></canvas>
+    
+    <div class="control-hint">
+        WASD: Mover | E: Interactuar | Espacio: Correr
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Estado del juego
+        const game = {
+            time: 480, // minutos desde medianoche (8:00 AM)
+            money: 50,
+            health: 100,
+            inventory: [],
+            currentInteraction: null
+        };
+        
+        // Control de teclas
+        const keys = {};
+        
+        // Jugador
+        const player = {
+            x: 400,
+            y: 300,
+            width: 24,
+            height: 32,
+            speed: 2,
+            running: false,
+            direction: 'down',
+            animFrame: 0,
+            animTimer: 0
+        };
+        
+        // Cámara
+        const camera = {
+            x: 0,
+            y: 0
+        };
+        
+        // NPCs y vehículos
+        const npcs = [
+            { x: 200, y: 200, width: 20, height: 30, type: 'person', name: 'María', color: '#FF69B4', task: 'walking', targetX: 250, targetY: 200, speed: 0.5 },
+            { x: 600, y: 150, width: 20, height: 30, type: 'person', name: 'José', color: '#4169E1', task: 'waiting', speed: 0.3 },
+            { x: 100, y: 400, width: 60, height: 30, type: 'car', name: 'Coche Azul', color: '#1E90FF', task: 'parked', speed: 1 },
+            { x: 300, y: 500, width: 50, height: 25, type: 'bike', name: 'Bicicleta', color: '#FF6347', task: 'parked', speed: 2 }
+        ];
+        
+        // Edificios y elementos interactivos
+        const buildings = [
+            { x: 50, y: 50, width: 120, height: 100, type: 'house', name: 'Casa de María', color: '#8B4513', roof: '#654321' },
+            { x: 250, y: 80, width: 100, height: 80, type: 'shop', name: 'Tienda', color: '#DC143C', roof: '#B22222' },
+            { x: 450, y: 60, width: 150, height: 120, type: 'house', name: 'Casa Grande', color: '#228B22', roof: '#006400' },
+            { x: 700, y: 100, width: 80, height: 90, type: 'church', name: 'Iglesia', color: '#F5F5DC', roof: '#D2691E' },
+            { x: 150, y: 350, width: 60, height: 40, type: 'fountain', name: 'Fuente', color: '#4682B4' },
+            { x: 500, y: 400, width: 40, height: 60, type: 'tree', name: 'Árbol', color: '#228B22' },
+            { x: 600, y: 350, width: 40, height: 60, type: 'tree', name: 'Árbol', color: '#32CD32' },
+            { x: 350, y: 300, width: 80, height: 50, type: 'bench', name: 'Banco', color: '#8B4513' }
+        ];
+        
+        // Sistema de interacciones
+        const interactions = {
+            'Tienda': () => showInteraction('¡Bienvenido a la tienda! ¿Quieres comprar algo? (Presiona E otra vez)'),
+            'Casa de María': () => showInteraction('Esta es la casa de María. Parece que no está en casa.'),
+            'Casa Grande': () => showInteraction('Una casa muy elegante. Debe vivir alguien importante aquí.'),
+            'Iglesia': () => showInteraction('Un lugar de paz y tranquilidad.'),
+            'Fuente': () => {
+                game.health = Math.min(100, game.health + 5);
+                showInteraction('Bebes agua fresca de la fuente. +5 salud');
+            },
+            'Árbol': () => {
+                if (Math.random() > 0.7) {
+                    addToInventory('Manzana');
+                    showInteraction('¡Encontraste una manzana en el árbol!');
+                } else {
+                    showInteraction('Este árbol no tiene frutos maduros.');
+                }
+            },
+            'Banco': () => {
+                game.health = Math.min(100, game.health + 2);
+                showInteraction('Te sientas a descansar en el banco. +2 salud');
+            },
+            'María': () => showInteraction('María: "¡Hola! ¿Cómo estás? Estoy dando un paseo por el pueblo."'),
+            'José': () => showInteraction('José: "Buenos días. ¿Has visto mi gato? Se llama Whiskers."'),
+            'Coche Azul': () => showInteraction('Un coche bien cuidado. Las llaves no están puestas.'),
+            'Bicicleta': () => {
+                if (game.money >= 10) {
+                    game.money -= 10;
+                    player.speed = 4;
+                    showInteraction('Alquilas la bicicleta por $10. ¡Ahora te mueves más rápido!');
+                } else {
+                    showInteraction('Necesitas $10 para alquilar la bicicleta.');
+                }
+            }
+        };
+        
+        function addToInventory(item) {
+            game.inventory.push(item);
+            updateInventoryDisplay();
+        }
+        
+        function updateInventoryDisplay() {
+            const itemsDiv = document.getElementById('items');
+            itemsDiv.innerHTML = game.inventory.length > 0 ? 
+                game.inventory.join(', ') : 'Vacío';
+        }
+        
+        function showInteraction(text) {
+            const interactionDiv = document.getElementById('interactions');
+            interactionDiv.textContent = text;
+            interactionDiv.style.display = 'block';
+            setTimeout(() => {
+                interactionDiv.style.display = 'none';
+            }, 3000);
+        }
+        
+        function updateNPCs() {
+            npcs.forEach(npc => {
+                if (npc.task === 'walking' && npc.type === 'person') {
+                    const dx = npc.targetX - npc.x;
+                    const dy = npc.targetY - npc.y;
+                    const distance = Math.sqrt(dx*dx + dy*dy);
+                    
+                    if (distance > 5) {
+                        npc.x += (dx / distance) * npc.speed;
+                        npc.y += (dy / distance) * npc.speed;
+                    } else {
+                        // Cambiar objetivo aleatoriamente
+                        npc.targetX = Math.random() * canvas.width;
+                        npc.targetY = Math.random() * canvas.height;
+                    }
+                }
+            });
+        }
+        
+        function updateTime() {
+            game.time += 0.1; // El tiempo pasa lentamente
+            if (game.time >= 1440) game.time = 0; // Reset a medianoche
+            
+            const hours = Math.floor(game.time / 60);
+            const minutes = Math.floor(game.time % 60);
+            document.getElementById('time').textContent = 
+                `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        }
+        
+        function updateUI() {
+            document.getElementById('health').textContent = game.health;
+            document.getElementById('money').textContent = game.money;
+        }
+        
+        function checkCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+        
+        function findNearestInteractable() {
+            const interactionDistance = 50;
+            
+            // Verificar edificios
+            for (let building of buildings) {
+                const distance = Math.sqrt(
+                    Math.pow(player.x - (building.x + building.width/2), 2) +
+                    Math.pow(player.y - (building.y + building.height/2), 2)
+                );
+                if (distance < interactionDistance) {
+                    return building.name;
+                }
+            }
+            
+            // Verificar NPCs
+            for (let npc of npcs) {
+                const distance = Math.sqrt(
+                    Math.pow(player.x - npc.x, 2) +
+                    Math.pow(player.y - npc.y, 2)
+                );
+                if (distance < interactionDistance) {
+                    return npc.name;
+                }
+            }
+            
+            return null;
+        }
+        
+        function drawPixelatedRect(x, y, width, height, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(Math.floor(x), Math.floor(y), Math.floor(width), Math.floor(height));
+        }
+        
+        function drawBuilding(building) {
+            // Sombra
+            drawPixelatedRect(building.x + 3, building.y + 3, building.width, building.height, 'rgba(0,0,0,0.3)');
+            
+            // Edificio principal
+            drawPixelatedRect(building.x, building.y, building.width, building.height, building.color);
+            
+            // Techo (si existe)
+            if (building.roof) {
+                drawPixelatedRect(building.x - 5, building.y - 10, building.width + 10, 15, building.roof);
+            }
+            
+            // Detalles según el tipo
+            if (building.type === 'house') {
+                // Puerta
+                drawPixelatedRect(building.x + building.width/2 - 8, building.y + building.height - 20, 16, 20, '#654321');
+                // Ventanas
+                drawPixelatedRect(building.x + 10, building.y + 20, 15, 15, '#87CEEB');
+                drawPixelatedRect(building.x + building.width - 25, building.y + 20, 15, 15, '#87CEEB');
+            } else if (building.type === 'shop') {
+                // Puerta más grande
+                drawPixelatedRect(building.x + building.width/2 - 12, building.y + building.height - 25, 24, 25, '#8B4513');
+                // Letrero
+                drawPixelatedRect(building.x + 10, building.y + 10, building.width - 20, 15, '#FFD700');
+            } else if (building.type === 'fountain') {
+                // Agua
+                drawPixelatedRect(building.x + 5, building.y + 5, building.width - 10, building.height - 10, '#00BFFF');
+            } else if (building.type === 'tree') {
+                // Tronco
+                drawPixelatedRect(building.x + building.width/2 - 5, building.y + building.height - 20, 10, 20, '#8B4513');
+                // Hojas (círculo pixelado)
+                drawPixelatedRect(building.x, building.y, building.width, building.height - 20, building.color);
+            }
+        }
+        
+        function drawNPC(npc) {
+            // Sombra
+            drawPixelatedRect(npc.x + 2, npc.y + 2, npc.width, npc.height, 'rgba(0,0,0,0.3)');
+            
+            if (npc.type === 'person') {
+                // Cuerpo
+                drawPixelatedRect(npc.x, npc.y, npc.width, npc.height, npc.color);
+                // Cabeza
+                drawPixelatedRect(npc.x + 2, npc.y - 8, npc.width - 4, 10, '#FDBCB4');
+            } else if (npc.type === 'car') {
+                // Coche
+                drawPixelatedRect(npc.x, npc.y, npc.width, npc.height, npc.color);
+                // Ventanas
+                drawPixelatedRect(npc.x + 5, npc.y + 5, npc.width - 10, npc.height - 10, '#87CEEB');
+                // Ruedas
+                drawPixelatedRect(npc.x - 2, npc.y + npc.height - 8, 8, 8, '#333');
+                drawPixelatedRect(npc.x + npc.width - 6, npc.y + npc.height - 8, 8, 8, '#333');
+            } else if (npc.type === 'bike') {
+                // Bicicleta
+                drawPixelatedRect(npc.x, npc.y, npc.width, npc.height, npc.color);
+                // Ruedas
+                drawPixelatedRect(npc.x + 5, npc.y + npc.height - 6, 6, 6, '#333');
+                drawPixelatedRect(npc.x + npc.width - 11, npc.y + npc.height - 6, 6, 6, '#333');
+            }
+        }
+        
+        function drawPlayer() {
+            // Sombra
+            drawPixelatedRect(player.x + 2, player.y + 2, player.width, player.height, 'rgba(0,0,0,0.3)');
+            
+            // Cuerpo del jugador
+            drawPixelatedRect(player.x, player.y, player.width, player.height, '#FF4500');
+            
+            // Cabeza
+            drawPixelatedRect(player.x + 4, player.y - 8, player.width - 8, 10, '#FDBCB4');
+            
+            // Animación simple de caminar
+            if (keys['w'] || keys['a'] || keys['s'] || keys['d']) {
+                player.animTimer++;
+                if (player.animTimer > 10) {
+                    player.animFrame = (player.animFrame + 1) % 2;
+                    player.animTimer = 0;
+                }
+                
+                // Piernas moviéndose
+                const legOffset = player.animFrame === 0 ? 0 : 2;
+                drawPixelatedRect(player.x + 2 + legOffset, player.y + player.height - 8, 6, 8, '#000080');
+                drawPixelatedRect(player.x + player.width - 8 - legOffset, player.y + player.height - 8, 6, 8, '#000080');
+            } else {
+                // Piernas estáticas
+                drawPixelatedRect(player.x + 4, player.y + player.height - 8, 6, 8, '#000080');
+                drawPixelatedRect(player.x + player.width - 10, player.y + player.height - 8, 6, 8, '#000080');
+            }
+        }
+        
+        function drawGrass() {
+            // Pasto base
+            ctx.fillStyle = '#32CD32';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Textura de pasto (puntos aleatorios)
+            ctx.fillStyle = '#228B22';
+            for (let i = 0; i < 200; i++) {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                ctx.fillRect(x, y, 2, 2);
+            }
+            
+            // Caminos
+            ctx.fillStyle = '#D2691E';
+            ctx.fillRect(180, 180, 400, 20); // Horizontal
+            ctx.fillRect(300, 0, 20, canvas.height); // Vertical
+        }
+        
+        function gameLoop() {
+            // Limpiar canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Dibujar fondo
+            drawGrass();
+            
+            // Actualizar NPCs
+            updateNPCs();
+            
+            // Actualizar tiempo
+            updateTime();
+            
+            // Manejar controles
+            player.running = keys[' '];
+            const currentSpeed = player.running ? player.speed * 1.5 : player.speed;
+            
+            if (keys['w']) player.y -= currentSpeed;
+            if (keys['s']) player.y += currentSpeed;
+            if (keys['a']) player.x -= currentSpeed;
+            if (keys['d']) player.x += currentSpeed;
+            
+            // Mantener jugador en pantalla
+            player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
+            player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
+            
+            // Dibujar edificios
+            buildings.forEach(drawBuilding);
+            
+            // Dibujar NPCs
+            npcs.forEach(drawNPC);
+            
+            // Dibujar jugador
+            drawPlayer();
+            
+            // Actualizar UI
+            updateUI();
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Event listeners
+        document.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+            
+            if (e.key.toLowerCase() === 'e') {
+                const nearest = findNearestInteractable();
+                if (nearest && interactions[nearest]) {
+                    interactions[nearest]();
+                }
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+        
+        // Inicializar
+        updateInventoryDisplay();
+        gameLoop();
+    </script>
 </body>
 </html>
