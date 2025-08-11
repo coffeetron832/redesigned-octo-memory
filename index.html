@@ -12,44 +12,21 @@
     --muted: rgba(255,255,255,0.06);
   }
   html,body{height:100%;margin:0;background:var(--bg);display:flex;align-items:center;justify-content:center;font-family:Inter,system-ui,Segoe UI,Roboto;color:var(--panel-fg)}
-  .app {
-    display:flex;
-    gap:18px;
-    align-items:flex-start;
-    padding:18px;
-  }
+  .app { display:flex; gap:18px; align-items:flex-start; padding:18px; }
 
   /* CANVAS WRAPPER */
   #container{ position:relative; display:inline-block; border-radius:8px; overflow:visible }
   canvas{ image-rendering: pixelated; border:4px solid #444; background:#88ccee; display:block; }
 
   /* UI column (fuera del canvas) */
-  .ui {
-    width: 260px;
-    display:flex;
-    flex-direction:column;
-    gap:12px;
-  }
-  .card {
-    background: var(--panel-bg);
-    border-radius:10px;
-    padding:10px;
-    border:1px solid var(--muted);
-    backdrop-filter: blur(6px);
-  }
+  .ui { width: 300px; display:flex; flex-direction:column; gap:12px; }
+  .card { background: var(--panel-bg); border-radius:10px; padding:10px; border:1px solid var(--muted); backdrop-filter: blur(6px); }
   .row { display:flex; gap:8px; align-items:center; justify-content:space-between; }
   .title { font-weight:600; margin-bottom:6px; }
   .small { font-size:13px; color:#ddd; }
 
   /* Buttons */
-  .btn {
-    background: transparent;
-    border: 1px solid var(--muted);
-    color: var(--panel-fg);
-    padding:8px 10px;
-    border-radius:8px;
-    cursor:pointer;
-  }
+  .btn { background: transparent; border: 1px solid var(--muted); color: var(--panel-fg); padding:8px 10px; border-radius:8px; cursor:pointer; }
   .btn.primary { background: rgba(255,255,255,0.07); }
   .btn.small { padding:6px 8px; font-size:13px; }
 
@@ -58,17 +35,9 @@
   .char-btn { padding:8px 12px; border-radius:8px; background:transparent; border:1px solid var(--muted); cursor:pointer; color:var(--panel-fg); }
   .char-btn.active { background: rgba(255,255,255,0.08); }
 
-  /* hint */
   .hint { font-size:12px; color:#cfcfcf; opacity:0.9; text-align:center; }
-
-  /* small weather badge used earlier now moved to UI */
   #weatherBadge { font-weight:600; }
-
-  /* responsive: stack on small screens */
-  @media (max-width:800px){
-    .app { flex-direction:column; align-items:center; }
-    .ui { width: 92%; max-width:420px; }
-  }
+  @media (max-width:800px){ .app { flex-direction:column; align-items:center; } .ui { width: 92%; max-width:420px; } }
 </style>
 </head>
 <body>
@@ -76,7 +45,6 @@
     <!-- Canvas area -->
     <div id="container" aria-label="Escenario pixel art">
       <canvas id="game" role="img" aria-label="Escena pixelada"></canvas>
-      <!-- fullscreen icon top-right inside container -->
       <button id="fsBtn" title="Pantalla completa" style="position:absolute; top:8px; right:8px; width:36px; height:36px; border-radius:8px; background:var(--panel-bg); border:1px solid var(--muted); display:grid; place-items:center; cursor:pointer;">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="#fff"><path id="fsPath" d="M7 14H5v4h4v-2H7v-2zm10 6h-4v2h6v-6h-2v4zM5 4v6h2V6h2V4H5zm12 0v2h2v2h2V4h-4z"/></svg>
       </button>
@@ -84,14 +52,18 @@
 
     <!-- Controls outside the canvas -->
     <div class="ui" aria-label="Panel de controles">
-      <!-- Local time card -->
+      <!-- Time card: now shows selected location name and time in that timezone -->
       <div class="card" id="timeCard">
-        <div class="title">Hora local</div>
+        <div class="title">Hora</div>
         <div class="row">
-          <div style="font-size:20px;font-weight:700" id="localTime">--:--:--</div>
+          <div style="font-size:18px;font-weight:700" id="localTime">--:--:--</div>
           <div style="font-size:13px;color:#bbb" id="timePeriod">—</div>
         </div>
-        <div class="small hint" style="margin-top:8px">La escena se ajusta según la hora y el clima local.</div>
+        <div style="margin-top:8px" class="small">Zona: <span id="tzName">Local</span></div>
+        <div style="margin-top:8px" class="small hint">La escena se ajusta según la hora y el clima de la ciudad seleccionada.</div>
+        <div style="margin-top:8px; display:flex; gap:8px;">
+          <button id="resetLocal" class="btn small">Restablecer a local</button>
+        </div>
       </div>
 
       <!-- Weather & location -->
@@ -132,7 +104,7 @@
   </div>
 
 <script>
-/* ================= CONFIG (igual que antes, con añadidos) ================= */
+/* ===================== CONFIG ===================== */
 const LOGICAL = 64;
 const DEFAULT_SCALE = 4;
 let SCALE = DEFAULT_SCALE;
@@ -148,7 +120,7 @@ function applyCanvasSize(){
 }
 applyCanvasSize();
 
-/* STATE */
+/* ===================== STATE ===================== */
 let frame = 0;
 let action = 'idle';
 let actionTime = 0;
@@ -167,6 +139,11 @@ let weather = { kind: 'unknown', temp: null, desc: '—' };
 let rainDrops = [], snowFlakes = [], fogAlpha = 0;
 let character = 'mike';
 
+/* timezone & place handling */
+let browserTZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+let currentTimezone = browserTZ;      // timezone used for scene/time
+let currentLocationName = 'Local';    // name shown in UI (Local or "City, Country")
+
 /* UI refs */
 const weatherBadge = document.getElementById('weatherBadge');
 const allowLoc = document.getElementById('allowLoc');
@@ -178,10 +155,12 @@ const btnMike = document.getElementById('btnMike');
 const btnSusan = document.getElementById('btnSusan');
 const localTimeEl = document.getElementById('localTime');
 const timePeriodEl = document.getElementById('timePeriod');
+const tzNameEl = document.getElementById('tzName');
+const resetLocalBtn = document.getElementById('resetLocal');
 const fsBtn = document.getElementById('fsBtn');
 const fsPath = document.getElementById('fsPath');
 
-/* UTIL: map open-meteo codes */
+/* ======= UTIL: map weather codes (Open-Meteo) ======= */
 function mapWeatherCode(code){
   if(code === 0) return 'clear';
   if(code === 1 || code === 2) return 'partly';
@@ -194,10 +173,15 @@ function mapWeatherCode(code){
   return 'unknown';
 }
 
-/* Fetch weather (Open-Meteo) */
-async function fetchWeatherAt(lat, lon){
+/* ======= Weather fetch using Open-Meteo (no key) =======
+   fetchWeatherAt(lat, lon, placeNameOpt)
+   The forecast response includes a "timezone" field when `timezone=auto` is used.
+   We capture that timezone and store it in currentTimezone.
+*/
+async function fetchWeatherAt(lat, lon, placeNameOpt){
   try {
-    locStatus.textContent = `Ubicación: ${lat.toFixed(3)}, ${lon.toFixed(3)}`;
+    const placeLabel = placeNameOpt || 'Local';
+    locStatus.textContent = `Ubicación: ${placeLabel} (${lat.toFixed(3)}, ${lon.toFixed(3)})`;
     weatherBadge.textContent = 'Obteniendo clima…';
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&timezone=auto`;
     const r = await fetch(url);
@@ -207,8 +191,12 @@ async function fetchWeatherAt(lat, lon){
       const cw = j.current_weather;
       const kind = mapWeatherCode(cw.weathercode);
       weather = { kind, temp: cw.temperature, desc: cw.weathercode };
+      // set timezone based on response (if present)
+      if(j.timezone) currentTimezone = j.timezone;
+      currentLocationName = placeNameOpt || (j.timezone || 'Local');
       updateWeatherEffects();
       updateBadge();
+      updateTimeDisplay(); // update tz label immediately
     } else {
       weather = { kind:'unknown', temp:null, desc:'—' };
       updateBadge();
@@ -220,7 +208,7 @@ async function fetchWeatherAt(lat, lon){
   }
 }
 
-/* Geolocation request (called by UI) */
+/* ======= Geolocation: request and fetch ======= */
 function requestLocationAndWeather(){
   if(!navigator.geolocation){
     weatherBadge.textContent = 'Geolocalización no soportada';
@@ -231,8 +219,8 @@ function requestLocationAndWeather(){
   weatherBadge.textContent = 'Solicitando ubicación…';
   navigator.geolocation.getCurrentPosition(async pos => {
     const { latitude, longitude } = pos.coords;
-    locStatus.textContent = `Ubicación detectada`;
-    await fetchWeatherAt(latitude, longitude);
+    currentLocationName = 'Local';
+    await fetchWeatherAt(latitude, longitude, currentLocationName);
   }, err => {
     console.warn(err);
     locStatus.textContent = 'Ubicación denegada o fallida.';
@@ -240,7 +228,7 @@ function requestLocationAndWeather(){
   }, { timeout: 10000 });
 }
 
-/* Geocode city (Open-Meteo geocoding) */
+/* ======= Geocoding by city (Open-Meteo geocoding) ======= */
 async function geocodeCity(name){
   try {
     locStatus.textContent = 'Buscando ciudad…';
@@ -250,8 +238,10 @@ async function geocodeCity(name){
     const j = await r.json();
     if(j && j.results && j.results.length){
       const res = j.results[0];
-      locStatus.textContent = `Encontrado: ${res.name}, ${res.country}`;
-      await fetchWeatherAt(res.latitude, res.longitude);
+      const placeLabel = `${res.name}${res.admin1 ? ', '+res.admin1 : ''}${res.country ? ', '+res.country : ''}`;
+      locStatus.textContent = `Encontrado: ${placeLabel}`;
+      // fetch weather (forecast with timezone=auto will provide timezone for that location)
+      await fetchWeatherAt(res.latitude, res.longitude, placeLabel);
     } else {
       locStatus.textContent = 'Ciudad no encontrada.';
       weatherBadge.textContent = 'Ciudad no encontrada';
@@ -263,7 +253,7 @@ async function geocodeCity(name){
   }
 }
 
-/* Update weather effects */
+/* ======= Update visual weather effects ======= */
 function updateWeatherEffects(){
   rainDrops = []; snowFlakes = []; fogAlpha = 0;
   switch(weather.kind){
@@ -287,61 +277,52 @@ function updateWeatherEffects(){
   }
 }
 
-/* Update badge text */
-function updateBadge(){
-  const t = weather.temp !== null ? `${Math.round(weather.temp)}°C` : '';
-  let label = '';
-  switch(weather.kind){
-    case 'clear': label = 'Despejado'; break;
-    case 'partly': label = 'Parcial'; break;
-    case 'cloudy': label = 'Nublado'; break;
-    case 'rain': label = 'Lluvia'; break;
-    case 'drizzle': label = 'Llovizna'; break;
-    case 'snow': label = 'Nieve'; break;
-    case 'fog': label = 'Niebla'; break;
-    case 'thunder': label = 'Tormenta'; break;
-    default: label = 'Hora local';
+/* ======= Time helpers using Intl for timezone-aware time ======= */
+function getTimePartsForTimezone(tz){
+  // returns {hour, minute, second}
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: tz });
+    const parts = fmt.formatToParts(new Date());
+    const obj = { hour:0, minute:0, second:0 };
+    for(const p of parts){
+      if(p.type === 'hour') obj.hour = parseInt(p.value,10);
+      if(p.type === 'minute') obj.minute = parseInt(p.value,10);
+      if(p.type === 'second') obj.second = parseInt(p.value,10);
+    }
+    return obj;
+  } catch(e){
+    // Fallback to browser time if Intl fails for some tz
+    const now = new Date();
+    return { hour: now.getHours(), minute: now.getMinutes(), second: now.getSeconds() };
   }
-  weatherBadge.textContent = `${label} ${t}`;
 }
 
-/* Time display update */
-function updateLocalTime(){
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2,'0');
-  const mm = String(now.getMinutes()).padStart(2,'0');
-  const ss = String(now.getSeconds()).padStart(2,'0');
-  localTimeEl.textContent = `${hh}:${mm}:${ss}`;
-  const period = getTimeOfDay();
-  timePeriodEl.textContent = period.charAt(0).toUpperCase() + period.slice(1);
+function getHourFloat(tz){
+  const p = getTimePartsForTimezone(tz);
+  return p.hour + p.minute/60 + p.second/3600;
 }
-setInterval(updateLocalTime, 1000);
-updateLocalTime();
 
-/* ====== Drawing functions (kept from previous implementation) ====== */
-/* computeSunMoonPos, drawBackground, drawCloud, drawTree, drawGround, drawCharacter, drawRain, updateRain, drawSnow, updateSnow, drawFog, updateAction, loop, drawStarsForNight */
-/* For brevity here: include same drawing/loop code as previous version (unchanged), copying core functions. */
-
-function getTimeOfDay(){
-  const now = new Date();
-  const h = now.getHours();
-  if(h >=6 && h <12) return 'morning';
-  if(h >=12 && h <18) return 'afternoon';
-  if(h >=18 && h <21) return 'evening';
+function getTimeOfDay(tz = currentTimezone){
+  const h = getTimePartsForTimezone(tz).hour;
+  if(h >= 6 && h < 12) return 'morning';
+  if(h >= 12 && h < 18) return 'afternoon';
+  if(h >= 18 && h < 21) return 'evening';
   return 'night';
 }
-function computeSunMoonPos(){
-  const now = new Date();
-  const hour = now.getHours() + now.getMinutes()/60;
-  let sunVisible = (hour >=6 && hour <=18);
-  let t,x,y;
+
+/* compute sun/moon pos using timezone */
+function computeSunMoonPos(tz = currentTimezone){
+  const hourFloat = getHourFloat(tz);
+  let sunVisible = (hourFloat >= 6 && hourFloat <= 18);
+  let t, x, y;
   if(sunVisible){
-    t = (hour - 6) / 12;
+    t = (hourFloat - 6) / 12; // 0..1
     x = 6 + t*(LOGICAL-12);
     y = 6 + Math.sin(t*Math.PI)*10;
     return { sun:true, x, y };
   } else {
-    let hh = hour; if(hh < 6) hh += 24;
+    let hh = hourFloat;
+    if(hh < 6) hh += 24;
     t = (hh - 18) / 12;
     x = 6 + t*(LOGICAL-12);
     y = 6 + Math.sin(t*Math.PI)*10;
@@ -349,6 +330,7 @@ function computeSunMoonPos(){
   }
 }
 
+/* ======= Drawing routines (kept mostly as before) ======= */
 function drawBackground(timeOfDay){
   if(timeOfDay === 'morning') ctx.fillStyle = '#bfefff';
   else if(timeOfDay === 'afternoon') ctx.fillStyle = '#9fe3ff';
@@ -365,7 +347,7 @@ function drawBackground(timeOfDay){
     ctx.restore();
   }
 
-  const pos = computeSunMoonPos();
+  const pos = computeSunMoonPos(currentTimezone);
   ctx.save(); ctx.scale(SCALE,SCALE);
   if(pos.sun){
     ctx.fillStyle = '#FFF3A6'; ctx.fillRect(Math.round(pos.x)-1,Math.round(pos.y)-1,8,8);
@@ -466,12 +448,26 @@ function updateAction(){ const actions=['idle','walk','blink','scratch','jump'];
 const stars = (()=>{ const a=[]; for(let i=0;i<60;i++) a.push({ x: Math.random()*(LOGICAL-6)+3, y: Math.random()*(groundY-20)+2, r: Math.random()>0.85?1.5:1 }); return a; })();
 function drawStarsForNight(){ ctx.save(); ctx.scale(SCALE,SCALE); ctx.fillStyle='#ffffff'; for(const s of stars) ctx.fillRect(Math.round(s.x), Math.round(s.y), s.r, s.r); ctx.restore(); }
 
-/* Main loop */
+/* ======= update UI time display using currentTimezone ======= */
+function updateTimeDisplay(){
+  const parts = getTimePartsForTimezone(currentTimezone);
+  const hh = String(parts.hour).padStart(2,'0');
+  const mm = String(parts.minute).padStart(2,'0');
+  const ss = String(parts.second).padStart(2,'0');
+  localTimeEl.textContent = `${hh}:${mm}:${ss}`;
+  const period = getTimeOfDay(currentTimezone);
+  timePeriodEl.textContent = period.charAt(0).toUpperCase()+period.slice(1);
+  tzNameEl.textContent = currentLocationName + (currentTimezone ? (' — ' + currentTimezone) : '');
+}
+setInterval(updateTimeDisplay, 1000);
+updateTimeDisplay();
+
+/* ======= Main loop (scene) ======= */
 function loop(){
   frame++;
-  const timeOfDay = getTimeOfDay();
+  const timeOfDay = getTimeOfDay(currentTimezone);
 
-  for(const c of clouds){ c.x += c.speed * (timeOfDay==='night'?0.6:1); if(c.x > LOGICAL + c.w) c.x = -c.w - 2; }
+  for(const c of clouds){ c.x += c.speed * (timeOfDay === 'night' ? 0.6 : 1); if(c.x > LOGICAL + c.w) c.x = -c.w - 2; }
 
   if(actionTime > 0) actionTime--; else updateAction();
 
@@ -488,6 +484,7 @@ function loop(){
 
   ctx.clearRect(0,0,canvas.width,canvas.height);
   drawBackground(timeOfDay);
+
   if(timeOfDay === 'night') drawStarsForNight();
   else if(timeOfDay === 'evening'){ ctx.save(); ctx.globalAlpha = 0.25; drawStarsForNight(); ctx.restore(); }
 
@@ -504,8 +501,8 @@ function loop(){
   requestAnimationFrame(loop);
 }
 
-/* Fullscreen handling (same as before) */
-function computeScaleForFullscreen(){ const maxW=window.innerWidth,maxH=window.innerHeight; return Math.max(1, Math.floor(Math.min(maxW/LOGICAL, maxH/LOGICAL))); }
+/* ======= Fullscreen & integer scaling (same as before) ======= */
+function computeScaleForFullscreen(){ const maxW = window.innerWidth, maxH = window.innerHeight; return Math.max(1, Math.floor(Math.min(maxW/LOGICAL, maxH/LOGICAL))); }
 function enterFullscreen(){ if(container.requestFullscreen) container.requestFullscreen(); else if(container.webkitRequestFullscreen) container.webkitRequestFullscreen(); }
 function exitFullscreen(){ if(document.exitFullscreen) document.exitFullscreen(); else if(document.webkitExitFullscreen) document.webkitExitFullscreen(); }
 fsBtn.addEventListener('click', ()=>{ if(!document.fullscreenElement && !document.webkitFullscreenElement) enterFullscreen(); else exitFullscreen(); });
@@ -513,7 +510,7 @@ function updateFullscreenState(){ const isFS = !!(document.fullscreenElement || 
 document.addEventListener('fullscreenchange', updateFullscreenState); document.addEventListener('webkitfullscreenchange', updateFullscreenState);
 window.addEventListener('resize', ()=>{ if(document.fullscreenElement || document.webkitFullscreenElement){ SCALE = computeScaleForFullscreen(); applyCanvasSize(); } });
 
-/* UI events */
+/* ======= UI event handlers ======= */
 allowLoc.addEventListener('click', ()=> { requestLocationAndWeather(); });
 retryLoc.addEventListener('click', ()=> { requestLocationAndWeather(); });
 searchCity.addEventListener('click', ()=> {
@@ -521,17 +518,23 @@ searchCity.addEventListener('click', ()=> {
   if(!name){ locStatus.textContent = 'Escribe una ciudad.'; return; }
   geocodeCity(name);
 });
+resetLocalBtn.addEventListener('click', ()=>{
+  // reset timezone to browser, location name to Local, and re-request location for weather
+  currentTimezone = browserTZ;
+  currentLocationName = 'Local';
+  tzNameEl.textContent = currentLocationName + ' — ' + currentTimezone;
+  requestLocationAndWeather();
+});
 
-/* Character select */
+/* character selection */
 btnMike.addEventListener('click', ()=> { character = 'mike'; btnMike.classList.add('active'); btnSusan.classList.remove('active'); btnMike.setAttribute('aria-checked','true'); btnSusan.setAttribute('aria-checked','false'); });
 btnSusan.addEventListener('click', ()=> { character = 'susan'; btnSusan.classList.add('active'); btnMike.classList.remove('active'); btnSusan.setAttribute('aria-checked','true'); btnMike.setAttribute('aria-checked','false'); });
 
-/* Init */
-requestLocationAndWeather();
+/* ======= init ======= */
+requestLocationAndWeather(); // ask for location at start (user can deny)
 updateAction();
 loop();
-
-/* Keep UI badge and effects updated if weather changed externally */
+/* keep badge and effects updated when weather changes */
 setInterval(()=> { if(weather.kind){ updateWeatherEffects(); updateBadge(); } }, 2500);
 
 </script>
