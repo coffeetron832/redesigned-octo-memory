@@ -10,6 +10,7 @@
     --panel-bg: rgba(0,0,0,0.45);
     --panel-fg: #fff;
     --muted: rgba(255,255,255,0.06);
+    --accent: #6fc3ff;
   }
   html,body{height:100%;margin:0;background:var(--bg);display:flex;align-items:center;justify-content:center;font-family:Inter,system-ui,Segoe UI,Roboto;color:var(--panel-fg)}
   .app { display:flex; gap:18px; align-items:flex-start; padding:18px; }
@@ -19,7 +20,7 @@
   canvas{ image-rendering: pixelated; border:4px solid #444; background:#88ccee; display:block; }
 
   /* UI column (fuera del canvas) */
-  .ui { width: 300px; display:flex; flex-direction:column; gap:12px; }
+  .ui { width: 340px; display:flex; flex-direction:column; gap:12px; }
   .card { background: var(--panel-bg); border-radius:10px; padding:10px; border:1px solid var(--muted); backdrop-filter: blur(6px); }
   .row { display:flex; gap:8px; align-items:center; justify-content:space-between; }
   .title { font-weight:600; margin-bottom:6px; }
@@ -37,7 +38,24 @@
 
   .hint { font-size:12px; color:#cfcfcf; opacity:0.9; text-align:center; }
   #weatherBadge { font-weight:600; }
-  @media (max-width:800px){ .app { flex-direction:column; align-items:center; } .ui { width: 92%; max-width:420px; } }
+
+  /* SEARCH RESULTS */
+  #searchResults { margin-top:8px; display:flex; flex-direction:column; gap:6px; max-height:180px; overflow:auto; }
+  .result {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:8px; border-radius:8px; background: rgba(255,255,255,0.02);
+    border:1px solid rgba(255,255,255,0.03); cursor:pointer;
+  }
+  .result:hover, .result:focus { outline: none; box-shadow: 0 0 0 2px rgba(111,195,255,0.12); background: rgba(111,195,255,0.03); }
+  .result .label { font-size:13px; }
+  .result .sub { font-size:12px; color:#cfcfcf; }
+
+  .muted { color:#bbb; font-size:13px; }
+
+  @media (max-width:900px){
+    .ui { width: 92%; max-width:420px; }
+    .app { flex-direction:column; align-items:center; }
+  }
 </style>
 </head>
 <body>
@@ -52,7 +70,7 @@
 
     <!-- Controls outside the canvas -->
     <div class="ui" aria-label="Panel de controles">
-      <!-- Time card: now shows selected location name and time in that timezone -->
+      <!-- Time card -->
       <div class="card" id="timeCard">
         <div class="title">Hora</div>
         <div class="row">
@@ -79,10 +97,13 @@
         <div style="margin-top:10px;">
           <label class="small">Buscar ciudad (manual)</label>
           <div style="display:flex; gap:8px; margin-top:6px;">
-            <input id="cityInput" placeholder="Bogotá, Madrid..." style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--muted);background:transparent;color:var(--panel-fg)">
+            <input id="cityInput" placeholder="Bogotá, Madrid..." style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--muted);background:transparent;color:var(--panel-fg)" aria-label="Buscar ciudad">
             <button id="searchCity" class="btn small">Buscar</button>
           </div>
           <div id="locStatus" class="small" style="margin-top:8px;color:#ccc">Estado: esperando</div>
+
+          <!-- search results list -->
+          <div id="searchResults" aria-live="polite" aria-label="Resultados de búsqueda"></div>
         </div>
       </div>
 
@@ -98,13 +119,13 @@
 
       <div class="card">
         <div class="title">Consejo</div>
-        <div class="small">Si niegas ubicación, usa la búsqueda manual por ciudad.</div>
+        <div class="small">Si niegas ubicación, usa la búsqueda manual por ciudad. Selecciona la coincidencia correcta de la lista.</div>
       </div>
     </div>
   </div>
 
 <script>
-/* ===================== CONFIG ===================== */
+/* ========== CONFIG ========== */
 const LOGICAL = 64;
 const DEFAULT_SCALE = 4;
 let SCALE = DEFAULT_SCALE;
@@ -120,7 +141,7 @@ function applyCanvasSize(){
 }
 applyCanvasSize();
 
-/* ===================== STATE ===================== */
+/* ========== STATE ========== */
 let frame = 0;
 let action = 'idle';
 let actionTime = 0;
@@ -141,8 +162,8 @@ let character = 'mike';
 
 /* timezone & place handling */
 let browserTZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-let currentTimezone = browserTZ;      // timezone used for scene/time
-let currentLocationName = 'Local';    // name shown in UI (Local or "City, Country")
+let currentTimezone = browserTZ;
+let currentLocationName = 'Local';
 
 /* UI refs */
 const weatherBadge = document.getElementById('weatherBadge');
@@ -151,6 +172,7 @@ const retryLoc = document.getElementById('retryLoc');
 const cityInput = document.getElementById('cityInput');
 const searchCity = document.getElementById('searchCity');
 const locStatus = document.getElementById('locStatus');
+const searchResults = document.getElementById('searchResults');
 const btnMike = document.getElementById('btnMike');
 const btnSusan = document.getElementById('btnSusan');
 const localTimeEl = document.getElementById('localTime');
@@ -173,11 +195,7 @@ function mapWeatherCode(code){
   return 'unknown';
 }
 
-/* ======= Weather fetch using Open-Meteo (no key) =======
-   fetchWeatherAt(lat, lon, placeNameOpt)
-   The forecast response includes a "timezone" field when `timezone=auto` is used.
-   We capture that timezone and store it in currentTimezone.
-*/
+/* ======= Fetch weather using Open-Meteo (timezone=auto) ======= */
 async function fetchWeatherAt(lat, lon, placeNameOpt){
   try {
     const placeLabel = placeNameOpt || 'Local';
@@ -191,12 +209,13 @@ async function fetchWeatherAt(lat, lon, placeNameOpt){
       const cw = j.current_weather;
       const kind = mapWeatherCode(cw.weathercode);
       weather = { kind, temp: cw.temperature, desc: cw.weathercode };
-      // set timezone based on response (if present)
       if(j.timezone) currentTimezone = j.timezone;
       currentLocationName = placeNameOpt || (j.timezone || 'Local');
       updateWeatherEffects();
       updateBadge();
-      updateTimeDisplay(); // update tz label immediately
+      updateTimeDisplay();
+      // clear results after selection
+      renderSearchResults([]);
     } else {
       weather = { kind:'unknown', temp:null, desc:'—' };
       updateBadge();
@@ -208,7 +227,7 @@ async function fetchWeatherAt(lat, lon, placeNameOpt){
   }
 }
 
-/* ======= Geolocation: request and fetch ======= */
+/* ======= Geolocation request ======= */
 function requestLocationAndWeather(){
   if(!navigator.geolocation){
     weatherBadge.textContent = 'Geolocalización no soportada';
@@ -228,21 +247,23 @@ function requestLocationAndWeather(){
   }, { timeout: 10000 });
 }
 
-/* ======= Geocoding by city (Open-Meteo geocoding) ======= */
+/* ======= Geocoding by city (return multiple matches) ======= */
 async function geocodeCity(name){
   try {
     locStatus.textContent = 'Buscando ciudad…';
-    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1`;
+    weatherBadge.textContent = 'Buscando…';
+    // request up to 10 matches
+    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=10`;
     const r = await fetch(url);
     if(!r.ok) throw new Error('HTTP '+r.status);
     const j = await r.json();
     if(j && j.results && j.results.length){
-      const res = j.results[0];
-      const placeLabel = `${res.name}${res.admin1 ? ', '+res.admin1 : ''}${res.country ? ', '+res.country : ''}`;
-      locStatus.textContent = `Encontrado: ${placeLabel}`;
-      // fetch weather (forecast with timezone=auto will provide timezone for that location)
-      await fetchWeatherAt(res.latitude, res.longitude, placeLabel);
+      // render all results and let user pick
+      renderSearchResults(j.results);
+      weatherBadge.textContent = `Se encontraron ${j.results.length} coincidencias`;
+      locStatus.textContent = 'Selecciona la ciudad correcta de la lista.';
     } else {
+      renderSearchResults([]);
       locStatus.textContent = 'Ciudad no encontrada.';
       weatherBadge.textContent = 'Ciudad no encontrada';
     }
@@ -253,7 +274,55 @@ async function geocodeCity(name){
   }
 }
 
-/* ======= Update visual weather effects ======= */
+/* ======= Render search results list (clickable & keyboard) ======= */
+function renderSearchResults(results){
+  searchResults.innerHTML = '';
+  if(!results || results.length === 0){
+    return;
+  }
+  results.forEach((res, idx) => {
+    const div = document.createElement('div');
+    div.className = 'result';
+    div.tabIndex = 0;
+    const label = document.createElement('div');
+    label.className = 'label';
+    // build nice label: "City, admin1, country"
+    const admin = res.admin1 ? (', ' + res.admin1) : '';
+    label.textContent = `${res.name}${admin}, ${res.country}`;
+    const sub = document.createElement('div');
+    sub.className = 'sub muted';
+    // include lat/lon and population if available
+    const pop = res.population ? ` — pop ${res.population}` : '';
+    sub.textContent = `Lat ${res.latitude.toFixed(3)}, Lon ${res.longitude.toFixed(3)}${pop}`;
+    const right = document.createElement('div');
+    right.style.marginLeft = '8px';
+    right.innerHTML = '<button class="btn small" aria-label="Seleccionar">Elegir</button>';
+    div.appendChild(label);
+    div.appendChild(sub);
+    div.appendChild(right);
+
+    // click handler: when user picks this city, fetch weather for its coords and set place label
+    const pick = async () => {
+      const placeLabel = `${res.name}${res.admin1 ? ', '+res.admin1 : ''}${res.country ? ', '+res.country : ''}`;
+      // set UI feedback
+      locStatus.textContent = `Seleccionado: ${placeLabel}`;
+      weatherBadge.textContent = `Obteniendo clima para ${placeLabel}…`;
+      await fetchWeatherAt(res.latitude, res.longitude, placeLabel);
+    };
+
+    div.addEventListener('click', pick);
+    div.addEventListener('keydown', (ev) => {
+      if(ev.key === 'Enter' || ev.key === ' '){
+        ev.preventDefault();
+        pick();
+      }
+    });
+
+    searchResults.appendChild(div);
+  });
+}
+
+/* ======= Update weather effects ======= */
 function updateWeatherEffects(){
   rainDrops = []; snowFlakes = []; fogAlpha = 0;
   switch(weather.kind){
@@ -277,9 +346,8 @@ function updateWeatherEffects(){
   }
 }
 
-/* ======= Time helpers using Intl for timezone-aware time ======= */
+/* ======= Time helpers (Intl timezone aware) ======= */
 function getTimePartsForTimezone(tz){
-  // returns {hour, minute, second}
   try {
     const fmt = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: tz });
     const parts = fmt.formatToParts(new Date());
@@ -291,7 +359,6 @@ function getTimePartsForTimezone(tz){
     }
     return obj;
   } catch(e){
-    // Fallback to browser time if Intl fails for some tz
     const now = new Date();
     return { hour: now.getHours(), minute: now.getMinutes(), second: now.getSeconds() };
   }
@@ -310,19 +377,16 @@ function getTimeOfDay(tz = currentTimezone){
   return 'night';
 }
 
-/* compute sun/moon pos using timezone */
 function computeSunMoonPos(tz = currentTimezone){
   const hourFloat = getHourFloat(tz);
-  let sunVisible = (hourFloat >= 6 && hourFloat <= 18);
   let t, x, y;
-  if(sunVisible){
-    t = (hourFloat - 6) / 12; // 0..1
+  if(hourFloat >= 6 && hourFloat <= 18){
+    t = (hourFloat - 6) / 12;
     x = 6 + t*(LOGICAL-12);
     y = 6 + Math.sin(t*Math.PI)*10;
     return { sun:true, x, y };
   } else {
-    let hh = hourFloat;
-    if(hh < 6) hh += 24;
+    let hh = hourFloat; if(hh < 6) hh += 24;
     t = (hh - 18) / 12;
     x = 6 + t*(LOGICAL-12);
     y = 6 + Math.sin(t*Math.PI)*10;
@@ -330,7 +394,8 @@ function computeSunMoonPos(tz = currentTimezone){
   }
 }
 
-/* ======= Drawing routines (kept mostly as before) ======= */
+/* ======= Drawing routines (kept) ======= */
+/* drawBackground, drawCloud, drawTree, drawGround, drawCharacter, drawRain, updateRain, drawSnow, updateSnow, drawFog, updateAction, loop, drawStarsForNight */
 function drawBackground(timeOfDay){
   if(timeOfDay === 'morning') ctx.fillStyle = '#bfefff';
   else if(timeOfDay === 'afternoon') ctx.fillStyle = '#9fe3ff';
@@ -462,7 +527,7 @@ function updateTimeDisplay(){
 setInterval(updateTimeDisplay, 1000);
 updateTimeDisplay();
 
-/* ======= Main loop (scene) ======= */
+/* ======= Main loop ======= */
 function loop(){
   frame++;
   const timeOfDay = getTimeOfDay(currentTimezone);
@@ -501,7 +566,7 @@ function loop(){
   requestAnimationFrame(loop);
 }
 
-/* ======= Fullscreen & integer scaling (same as before) ======= */
+/* ======= Fullscreen handling ======= */
 function computeScaleForFullscreen(){ const maxW = window.innerWidth, maxH = window.innerHeight; return Math.max(1, Math.floor(Math.min(maxW/LOGICAL, maxH/LOGICAL))); }
 function enterFullscreen(){ if(container.requestFullscreen) container.requestFullscreen(); else if(container.webkitRequestFullscreen) container.webkitRequestFullscreen(); }
 function exitFullscreen(){ if(document.exitFullscreen) document.exitFullscreen(); else if(document.webkitExitFullscreen) document.webkitExitFullscreen(); }
@@ -510,7 +575,7 @@ function updateFullscreenState(){ const isFS = !!(document.fullscreenElement || 
 document.addEventListener('fullscreenchange', updateFullscreenState); document.addEventListener('webkitfullscreenchange', updateFullscreenState);
 window.addEventListener('resize', ()=>{ if(document.fullscreenElement || document.webkitFullscreenElement){ SCALE = computeScaleForFullscreen(); applyCanvasSize(); } });
 
-/* ======= UI event handlers ======= */
+/* ======= UI events ======= */
 allowLoc.addEventListener('click', ()=> { requestLocationAndWeather(); });
 retryLoc.addEventListener('click', ()=> { requestLocationAndWeather(); });
 searchCity.addEventListener('click', ()=> {
@@ -518,8 +583,12 @@ searchCity.addEventListener('click', ()=> {
   if(!name){ locStatus.textContent = 'Escribe una ciudad.'; return; }
   geocodeCity(name);
 });
+cityInput.addEventListener('keydown', (e)=> {
+  if(e.key === 'Enter') searchCity.click();
+});
+
+/* reset local uses browser TZ and tries to re-request geolocation weather */
 resetLocalBtn.addEventListener('click', ()=>{
-  // reset timezone to browser, location name to Local, and re-request location for weather
   currentTimezone = browserTZ;
   currentLocationName = 'Local';
   tzNameEl.textContent = currentLocationName + ' — ' + currentTimezone;
@@ -531,7 +600,7 @@ btnMike.addEventListener('click', ()=> { character = 'mike'; btnMike.classList.a
 btnSusan.addEventListener('click', ()=> { character = 'susan'; btnSusan.classList.add('active'); btnMike.classList.remove('active'); btnSusan.setAttribute('aria-checked','true'); btnMike.setAttribute('aria-checked','false'); });
 
 /* ======= init ======= */
-requestLocationAndWeather(); // ask for location at start (user can deny)
+requestLocationAndWeather();
 updateAction();
 loop();
 /* keep badge and effects updated when weather changes */
