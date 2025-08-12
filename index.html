@@ -346,6 +346,26 @@ function updateWeatherEffects(){
   }
 }
 
+/* ======= NEW: updateBadge (solves ReferenceError) ======= */
+function updateBadge(){
+  const t = (weather.temp !== null && weather.temp !== undefined) ? `${Math.round(weather.temp)}°C` : '';
+  let label = '';
+  switch(weather.kind){
+    case 'clear': label = 'Despejado'; break;
+    case 'partly': label = 'Parcial'; break;
+    case 'cloudy': label = 'Nublado'; break;
+    case 'rain': label = 'Lluvia'; break;
+    case 'drizzle': label = 'Llovizna'; break;
+    case 'snow': label = 'Nieve'; break;
+    case 'fog': label = 'Niebla'; break;
+    case 'thunder': label = 'Tormenta'; break;
+    default: label = 'Hora local';
+  }
+  weatherBadge.textContent = `${label}${t ? ' ' + t : ''}`;
+  // also refresh timezone label if available
+  tzNameEl.textContent = currentLocationName + (currentTimezone ? (' — ' + currentTimezone) : '');
+}
+
 /* ======= Time helpers (Intl timezone aware) ======= */
 function getTimePartsForTimezone(tz){
   try {
