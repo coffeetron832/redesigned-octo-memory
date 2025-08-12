@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Pixel Scene — Clima & Personaje (Mike/Susan)</title>
+<title>WeatherBit</title>
 <style>
   :root{
     --bg: #000;
@@ -56,6 +56,9 @@
     .ui { width: 92%; max-width:420px; }
     .app { flex-direction:column; align-items:center; }
   }
+
+  /* language selector */
+  #langSelect { padding:6px 8px; border-radius:8px; background:transparent; border:1px solid var(--muted); color:var(--panel-fg); }
 </style>
 </head>
 <body>
@@ -70,15 +73,27 @@
 
     <!-- Controls outside the canvas -->
     <div class="ui" aria-label="Panel de controles">
+      <!-- Language -->
+      <div class="card" id="langCard">
+        <div class="title" id="langTitle">Idioma</div>
+        <div class="row">
+          <select id="langSelect" aria-label="Seleccionar idioma">
+            <option value="es">Español</option>
+            <option value="en">English</option>
+          </select>
+          <div class="small muted" id="langHint">UI / Weather text</div>
+        </div>
+      </div>
+
       <!-- Time card -->
       <div class="card" id="timeCard">
-        <div class="title">Hora</div>
+        <div class="title" id="timeTitle">Hora</div>
         <div class="row">
           <div style="font-size:18px;font-weight:700" id="localTime">--:--:--</div>
           <div style="font-size:13px;color:#bbb" id="timePeriod">—</div>
         </div>
         <div style="margin-top:8px" class="small">Zona: <span id="tzName">Local</span></div>
-        <div style="margin-top:8px" class="small hint">La escena se ajusta según la hora y el clima de la ciudad seleccionada.</div>
+        <div style="margin-top:8px" class="small hint" id="timeHint">La escena se ajusta según la hora y el clima de la ciudad seleccionada.</div>
         <div style="margin-top:8px; display:flex; gap:8px;">
           <button id="resetLocal" class="btn small">Restablecer a local</button>
         </div>
@@ -86,7 +101,7 @@
 
       <!-- Weather & location -->
       <div class="card">
-        <div class="title">Clima</div>
+        <div class="title" id="weatherTitle">Clima</div>
         <div id="weatherBadge">Detectando clima…</div>
 
         <div style="margin-top:10px; display:flex; gap:8px;">
@@ -95,7 +110,7 @@
         </div>
 
         <div style="margin-top:10px;">
-          <label class="small">Buscar ciudad (manual)</label>
+          <label class="small" id="searchLabel">Buscar ciudad (manual)</label>
           <div style="display:flex; gap:8px; margin-top:6px;">
             <input id="cityInput" placeholder="Bogotá, Madrid..." style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--muted);background:transparent;color:var(--panel-fg)" aria-label="Buscar ciudad">
             <button id="searchCity" class="btn small">Buscar</button>
@@ -109,23 +124,23 @@
 
       <!-- Character selection -->
       <div class="card">
-        <div class="title">Personaje</div>
+        <div class="title" id="characterTitle">Personaje</div>
         <div class="characters" role="radiogroup" aria-label="Elegir personaje">
           <button id="btnMike" class="char-btn active" role="radio" aria-checked="true">Mike</button>
           <button id="btnSusan" class="char-btn" role="radio" aria-checked="false">Susan</button>
         </div>
-        <div class="small hint" style="margin-top:8px">Cambia el personaje en cualquier momento.</div>
+        <div class="small hint" style="margin-top:8px" id="characterHint">Cambia el personaje en cualquier momento.</div>
       </div>
 
       <div class="card">
-        <div class="title">Consejo</div>
-        <div class="small">Si niegas ubicación, usa la búsqueda manual por ciudad. Selecciona la coincidencia correcta de la lista.</div>
+        <div class="title" id="adviceTitle">Consejo</div>
+        <div class="small" id="adviceText">Si niegas ubicación, usa la búsqueda manual por ciudad. Selecciona la coincidencia correcta de la lista.</div>
       </div>
     </div>
   </div>
 
 <script>
-/* ========== CONFIG ========== */
+/* ========== CONFIG / I18N ========== */
 const LOGICAL = 64;
 const DEFAULT_SCALE = 4;
 let SCALE = DEFAULT_SCALE;
@@ -141,12 +156,8 @@ function applyCanvasSize(){
 }
 applyCanvasSize();
 
-/* ========== STATE ========== */
-let frame = 0;
-let action = 'idle';
-let actionTime = 0;
-let dir = 1;
-let posX = 20;
+/* Basic state (kept) */
+let frame = 0, action = 'idle', actionTime = 0, dir = 1, posX = 20;
 const groundY = 44;
 let jumpOffset = 0, armOffset = 0, legOffset = 0, scratchOffset = 0;
 
@@ -182,7 +193,176 @@ const resetLocalBtn = document.getElementById('resetLocal');
 const fsBtn = document.getElementById('fsBtn');
 const fsPath = document.getElementById('fsPath');
 
-/* ======= UTIL: map weather codes (Open-Meteo) ======= */
+const langSelect = document.getElementById('langSelect');
+const langTitle = document.getElementById('langTitle');
+const langHint = document.getElementById('langHint');
+const timeTitle = document.getElementById('timeTitle');
+const timeHint = document.getElementById('timeHint');
+const weatherTitle = document.getElementById('weatherTitle');
+const searchLabel = document.getElementById('searchLabel');
+const characterTitle = document.getElementById('characterTitle');
+const characterHint = document.getElementById('characterHint');
+const adviceTitle = document.getElementById('adviceTitle');
+const adviceText = document.getElementById('adviceText');
+
+/* translations */
+const translations = {
+  es: {
+    lang_label: 'Idioma',
+    lang_hint: 'UI / texto del clima',
+    time_title: 'Hora',
+    time_hint: 'La escena se ajusta según la hora y el clima de la ciudad seleccionada.',
+    weather_title: 'Clima',
+    allow_location: 'Permitir ubicación',
+    retry: 'Reintentar',
+    search_label: 'Buscar ciudad (manual)',
+    search_placeholder: 'Bogotá, Madrid...',
+    state_waiting: 'Estado: esperando',
+    requesting_location: 'Solicitando ubicación…',
+    obtaining_weather: 'Obteniendo clima…',
+    found_matches: 'Se encontraron {n} coincidencias',
+    select_city_prompt: 'Selecciona la ciudad correcta de la lista.',
+    city_not_found: 'Ciudad no encontrada',
+    search_error: 'Error búsqueda',
+    select_label: 'Elegir',
+    selected_for: 'Obteniendo clima para {place}…',
+    location_coords: 'Ubicación: {place} ({lat}, {lon})',
+    selected: 'Seleccionado: {place}',
+    reset_local: 'Restablecer a local',
+    character_title: 'Personaje',
+    character_hint: 'Cambia el personaje en cualquier momento.',
+    advice_title: 'Consejo',
+    advice_text: 'Si niegas ubicación, usa la búsqueda manual por ciudad. Selecciona la coincidencia correcta de la lista.',
+    weather_labels: {
+      clear: 'Despejado',
+      partly: 'Parcial',
+      cloudy: 'Nublado',
+      rain: 'Lluvia',
+      drizzle: 'Llovizna',
+      snow: 'Nieve',
+      fog: 'Niebla',
+      thunder: 'Tormenta',
+      unknown: 'Hora local'
+    },
+    time_periods: {
+      morning: 'Mañana',
+      afternoon: 'Tarde',
+      evening: 'Atardecer',
+      night: 'Noche'
+    },
+    choose: 'Elegir',
+    location_not_supported: 'Geolocalización no soportada',
+    location_denied: 'Ubicación denegada — usa búsqueda manual',
+    location_error: 'Error al obtener clima.'
+  },
+  en: {
+    lang_label: 'Language',
+    lang_hint: 'UI / weather text',
+    time_title: 'Time',
+    time_hint: 'Scene adjusts to time & weather of selected city.',
+    weather_title: 'Weather',
+    allow_location: 'Allow location',
+    retry: 'Retry',
+    search_label: 'Search city (manual)',
+    search_placeholder: 'Bogotá, Madrid...',
+    state_waiting: 'Status: waiting',
+    requesting_location: 'Requesting location…',
+    obtaining_weather: 'Obtaining weather…',
+    found_matches: '{n} matches found',
+    select_city_prompt: 'Pick the correct city from the list.',
+    city_not_found: 'City not found',
+    search_error: 'Search error',
+    select_label: 'Select',
+    selected_for: 'Getting weather for {place}…',
+    location_coords: 'Location: {place} ({lat}, {lon})',
+    selected: 'Selected: {place}',
+    reset_local: 'Reset to local',
+    character_title: 'Character',
+    character_hint: 'Switch character at any time.',
+    advice_title: 'Tip',
+    advice_text: 'If you deny location, use manual city search. Pick the correct match.',
+    weather_labels: {
+      clear: 'Clear',
+      partly: 'Partly',
+      cloudy: 'Cloudy',
+      rain: 'Rain',
+      drizzle: 'Drizzle',
+      snow: 'Snow',
+      fog: 'Fog',
+      thunder: 'Thunder',
+      unknown: 'Local time'
+    },
+    time_periods: {
+      morning: 'Morning',
+      afternoon: 'Afternoon',
+      evening: 'Evening',
+      night: 'Night'
+    },
+    choose: 'Choose',
+    location_not_supported: 'Geolocation not supported',
+    location_denied: 'Location denied — use manual search',
+    location_error: 'Error fetching weather.'
+  }
+};
+
+/* load or default language */
+let lang = localStorage.getItem('ps_lang') || (navigator.language && navigator.language.startsWith('es') ? 'es' : 'en');
+langSelect.value = lang;
+
+/* simple translator with interpolation */
+function t(key, vars = {}) {
+  const parts = key.split('.');
+  let str = translations[lang];
+  for (const p of parts) {
+    if (!str) break;
+    str = str[p];
+  }
+  if (typeof str !== 'string') {
+    // missing key fallback to english or raw key
+    str = translations['en'];
+    for (const p of parts) {
+      if (!str) break;
+      str = str[p];
+    }
+    if (typeof str !== 'string') return key;
+  }
+  // interpolation
+  return str.replace(/\{([^}]+)\}/g, (_, k) => (vars[k] !== undefined ? vars[k] : `{${k}}`));
+}
+
+/* apply translations to static UI elements */
+function applyTranslationsToUI() {
+  langTitle.textContent = t('lang_label');
+  langHint.textContent = t('lang_hint');
+  timeTitle.textContent = t('time_title');
+  timeHint.textContent = t('time_hint');
+  weatherTitle.textContent = t('weather_title');
+  allowLoc.textContent = t('allow_location');
+  retryLoc.textContent = t('retry');
+  searchLabel.textContent = t('search_label');
+  cityInput.placeholder = t('search_placeholder');
+  resetLocalBtn.textContent = t('reset_local');
+  characterTitle.textContent = t('character_title');
+  characterHint.textContent = t('character_hint');
+  adviceTitle.textContent = t('advice_title');
+  adviceText.textContent = t('advice_text');
+  // search button
+  searchCity.textContent = t('search_label').startsWith('Search') ? 'Search' : 'Buscar'; // keep short
+  // update result choose button label later when rendering
+  // update current badge/time text translations
+  locStatus.textContent = t('state_waiting');
+  updateBadge(); // to localize weather label
+  updateTimeDisplay();
+}
+
+/* save language and re-apply */
+langSelect.addEventListener('change', () => {
+  lang = langSelect.value;
+  localStorage.setItem('ps_lang', lang);
+  applyTranslationsToUI();
+});
+
+/* ======= weather mapping & helpers (same as before) ======= */
 function mapWeatherCode(code){
   if(code === 0) return 'clear';
   if(code === 1 || code === 2) return 'partly';
@@ -199,8 +379,8 @@ function mapWeatherCode(code){
 async function fetchWeatherAt(lat, lon, placeNameOpt){
   try {
     const placeLabel = placeNameOpt || 'Local';
-    locStatus.textContent = `Ubicación: ${placeLabel} (${lat.toFixed(3)}, ${lon.toFixed(3)})`;
-    weatherBadge.textContent = 'Obteniendo clima…';
+    locStatus.textContent = t('location_coords', { place: placeLabel, lat: lat.toFixed(3), lon: lon.toFixed(3) });
+    weatherBadge.textContent = t('obtaining_weather');
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&timezone=auto`;
     const r = await fetch(url);
     if(!r.ok) throw new Error('HTTP '+r.status);
@@ -214,7 +394,6 @@ async function fetchWeatherAt(lat, lon, placeNameOpt){
       updateWeatherEffects();
       updateBadge();
       updateTimeDisplay();
-      // clear results after selection
       renderSearchResults([]);
     } else {
       weather = { kind:'unknown', temp:null, desc:'—' };
@@ -222,91 +401,84 @@ async function fetchWeatherAt(lat, lon, placeNameOpt){
     }
   } catch(e){
     console.error(e);
-    locStatus.textContent = 'Error al obtener clima.';
-    weatherBadge.textContent = 'Clima: error';
+    locStatus.textContent = t('location_error');
+    weatherBadge.textContent = t('location_error');
   }
 }
 
 /* ======= Geolocation request ======= */
 function requestLocationAndWeather(){
   if(!navigator.geolocation){
-    weatherBadge.textContent = 'Geolocalización no soportada';
-    locStatus.textContent = 'Geolocalización no soportada';
+    weatherBadge.textContent = t('location_not_supported');
+    locStatus.textContent = t('location_not_supported');
     return;
   }
-  locStatus.textContent = 'Solicitando ubicación…';
-  weatherBadge.textContent = 'Solicitando ubicación…';
+  locStatus.textContent = t('requesting_location');
+  weatherBadge.textContent = t('requesting_location');
   navigator.geolocation.getCurrentPosition(async pos => {
     const { latitude, longitude } = pos.coords;
     currentLocationName = 'Local';
     await fetchWeatherAt(latitude, longitude, currentLocationName);
   }, err => {
     console.warn(err);
-    locStatus.textContent = 'Ubicación denegada o fallida.';
-    weatherBadge.textContent = 'Ubicación denegada — usa búsqueda manual';
+    locStatus.textContent = t('location_denied');
+    weatherBadge.textContent = t('location_denied');
   }, { timeout: 10000 });
 }
 
 /* ======= Geocoding by city (return multiple matches) ======= */
 async function geocodeCity(name){
   try {
-    locStatus.textContent = 'Buscando ciudad…';
-    weatherBadge.textContent = 'Buscando…';
-    // request up to 10 matches
+    locStatus.textContent = t('requesting_location');
+    weatherBadge.textContent = t('obtaining_weather');
     const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=10`;
     const r = await fetch(url);
     if(!r.ok) throw new Error('HTTP '+r.status);
     const j = await r.json();
     if(j && j.results && j.results.length){
-      // render all results and let user pick
       renderSearchResults(j.results);
-      weatherBadge.textContent = `Se encontraron ${j.results.length} coincidencias`;
-      locStatus.textContent = 'Selecciona la ciudad correcta de la lista.';
+      weatherBadge.textContent = t('found_matches', { n: j.results.length });
+      locStatus.textContent = t('select_city_prompt');
     } else {
       renderSearchResults([]);
-      locStatus.textContent = 'Ciudad no encontrada.';
-      weatherBadge.textContent = 'Ciudad no encontrada';
+      locStatus.textContent = t('city_not_found');
+      weatherBadge.textContent = t('city_not_found');
     }
   } catch(e){
     console.error(e);
-    locStatus.textContent = 'Error búsqueda ciudad';
-    weatherBadge.textContent = 'Error búsqueda';
+    locStatus.textContent = t('search_error');
+    weatherBadge.textContent = t('search_error');
   }
 }
 
 /* ======= Render search results list (clickable & keyboard) ======= */
 function renderSearchResults(results){
   searchResults.innerHTML = '';
-  if(!results || results.length === 0){
-    return;
-  }
-  results.forEach((res, idx) => {
+  if(!results || results.length === 0) return;
+  results.forEach((res) => {
     const div = document.createElement('div');
     div.className = 'result';
     div.tabIndex = 0;
     const label = document.createElement('div');
     label.className = 'label';
-    // build nice label: "City, admin1, country"
     const admin = res.admin1 ? (', ' + res.admin1) : '';
     label.textContent = `${res.name}${admin}, ${res.country}`;
     const sub = document.createElement('div');
     sub.className = 'sub muted';
-    // include lat/lon and population if available
     const pop = res.population ? ` — pop ${res.population}` : '';
     sub.textContent = `Lat ${res.latitude.toFixed(3)}, Lon ${res.longitude.toFixed(3)}${pop}`;
     const right = document.createElement('div');
     right.style.marginLeft = '8px';
-    right.innerHTML = '<button class="btn small" aria-label="Seleccionar">Elegir</button>';
+    // localized choose button
+    right.innerHTML = `<button class="btn small" aria-label="${t('choose')}">${t('choose')}</button>`;
     div.appendChild(label);
     div.appendChild(sub);
     div.appendChild(right);
 
-    // click handler: when user picks this city, fetch weather for its coords and set place label
     const pick = async () => {
       const placeLabel = `${res.name}${res.admin1 ? ', '+res.admin1 : ''}${res.country ? ', '+res.country : ''}`;
-      // set UI feedback
-      locStatus.textContent = `Seleccionado: ${placeLabel}`;
-      weatherBadge.textContent = `Obteniendo clima para ${placeLabel}…`;
+      locStatus.textContent = t('selected', { place: placeLabel });
+      weatherBadge.textContent = t('selected_for', { place: placeLabel });
       await fetchWeatherAt(res.latitude, res.longitude, placeLabel);
     };
 
@@ -322,7 +494,7 @@ function renderSearchResults(results){
   });
 }
 
-/* ======= Update weather effects ======= */
+/* ======= Update weather effects (same) ======= */
 function updateWeatherEffects(){
   rainDrops = []; snowFlakes = []; fogAlpha = 0;
   switch(weather.kind){
@@ -346,23 +518,11 @@ function updateWeatherEffects(){
   }
 }
 
-/* ======= NEW: updateBadge (solves ReferenceError) ======= */
+/* ======= updateBadge uses translations ======= */
 function updateBadge(){
-  const t = (weather.temp !== null && weather.temp !== undefined) ? `${Math.round(weather.temp)}°C` : '';
-  let label = '';
-  switch(weather.kind){
-    case 'clear': label = 'Despejado'; break;
-    case 'partly': label = 'Parcial'; break;
-    case 'cloudy': label = 'Nublado'; break;
-    case 'rain': label = 'Lluvia'; break;
-    case 'drizzle': label = 'Llovizna'; break;
-    case 'snow': label = 'Nieve'; break;
-    case 'fog': label = 'Niebla'; break;
-    case 'thunder': label = 'Tormenta'; break;
-    default: label = 'Hora local';
-  }
-  weatherBadge.textContent = `${label}${t ? ' ' + t : ''}`;
-  // also refresh timezone label if available
+  const ttemp = (weather.temp !== null && weather.temp !== undefined) ? `${Math.round(weather.temp)}°C` : '';
+  const label = translations[lang].weather_labels[weather.kind] || translations[lang].weather_labels.unknown;
+  weatherBadge.textContent = `${label}${ttemp ? ' ' + ttemp : ''}`;
   tzNameEl.textContent = currentLocationName + (currentTimezone ? (' — ' + currentTimezone) : '');
 }
 
@@ -383,12 +543,10 @@ function getTimePartsForTimezone(tz){
     return { hour: now.getHours(), minute: now.getMinutes(), second: now.getSeconds() };
   }
 }
-
 function getHourFloat(tz){
   const p = getTimePartsForTimezone(tz);
   return p.hour + p.minute/60 + p.second/3600;
 }
-
 function getTimeOfDay(tz = currentTimezone){
   const h = getTimePartsForTimezone(tz).hour;
   if(h >= 6 && h < 12) return 'morning';
@@ -396,7 +554,6 @@ function getTimeOfDay(tz = currentTimezone){
   if(h >= 18 && h < 21) return 'evening';
   return 'night';
 }
-
 function computeSunMoonPos(tz = currentTimezone){
   const hourFloat = getHourFloat(tz);
   let t, x, y;
@@ -540,8 +697,9 @@ function updateTimeDisplay(){
   const mm = String(parts.minute).padStart(2,'0');
   const ss = String(parts.second).padStart(2,'0');
   localTimeEl.textContent = `${hh}:${mm}:${ss}`;
-  const period = getTimeOfDay(currentTimezone);
-  timePeriodEl.textContent = period.charAt(0).toUpperCase()+period.slice(1);
+  const periodKey = getTimeOfDay(currentTimezone);
+  const periodLabel = translations[lang].time_periods[periodKey] || periodKey;
+  timePeriodEl.textContent = periodLabel;
   tzNameEl.textContent = currentLocationName + (currentTimezone ? (' — ' + currentTimezone) : '');
 }
 setInterval(updateTimeDisplay, 1000);
@@ -600,14 +758,12 @@ allowLoc.addEventListener('click', ()=> { requestLocationAndWeather(); });
 retryLoc.addEventListener('click', ()=> { requestLocationAndWeather(); });
 searchCity.addEventListener('click', ()=> {
   const name = cityInput.value.trim();
-  if(!name){ locStatus.textContent = 'Escribe una ciudad.'; return; }
+  if(!name){ locStatus.textContent = (lang === 'es' ? 'Escribe una ciudad.' : 'Type a city.'); return; }
   geocodeCity(name);
 });
-cityInput.addEventListener('keydown', (e)=> {
-  if(e.key === 'Enter') searchCity.click();
-});
+cityInput.addEventListener('keydown', (e)=> { if(e.key === 'Enter') searchCity.click(); });
 
-/* reset local uses browser TZ and tries to re-request geolocation weather */
+/* reset local */
 resetLocalBtn.addEventListener('click', ()=>{
   currentTimezone = browserTZ;
   currentLocationName = 'Local';
@@ -620,6 +776,7 @@ btnMike.addEventListener('click', ()=> { character = 'mike'; btnMike.classList.a
 btnSusan.addEventListener('click', ()=> { character = 'susan'; btnSusan.classList.add('active'); btnMike.classList.remove('active'); btnSusan.setAttribute('aria-checked','true'); btnMike.setAttribute('aria-checked','false'); });
 
 /* ======= init ======= */
+applyTranslationsToUI();
 requestLocationAndWeather();
 updateAction();
 loop();
