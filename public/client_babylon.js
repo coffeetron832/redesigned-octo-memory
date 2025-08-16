@@ -52,84 +52,138 @@ light.intensity = 0.9;
 let ground = BABYLON.MeshBuilder.CreateGround("ground", {width:200, height:200}, scene);
 ground.checkCollisions = true;
 
-// ======= Mapa pintoresco =======
-// ======= Mapa tipo ciudad =======
+// ======= Mapa  =======
 function createCity() {
-    const mapSize = 150; // más pequeño y denso
-    const buildingCount = 60;
-    const roadCount = 20;
-    const parkCount = 4;
+    const mapSize = 120; 
+    const buildingBlocks = 6;
+    const buildingsPerBlock = 6;
+    const treeCount = 40;
+    const bushCount = 20;
 
-    // Calles en cuadrícula
-    for(let i=0;i<roadCount;i++){
-        let isVertical = i % 2 === 0;
-        let roadLength = mapSize;
-        let roadWidth = 4;
-        let road = BABYLON.MeshBuilder.CreateBox("road"+i, {
-            width: isVertical ? roadWidth : roadLength,
-            height: 0.05,
-            depth: isVertical ? roadLength : roadWidth
-        }, scene);
+    // === Calles principales en cuadrícula ===
+    let roads = [];
+    for(let i=0; i<buildingBlocks+1; i++){
+        let roadX = BABYLON.MeshBuilder.CreateBox("roadX"+i, {width: mapSize, height:0.05, depth: 3}, scene);
+        roadX.position.set(0,0.025, (i*(mapSize/buildingBlocks))-mapSize/2);
+        roadX.material = new BABYLON.StandardMaterial("matRoadX"+i, scene);
+        roadX.material.diffuseColor = new BABYLON.Color3(0.15,0.15,0.15);
+        roads.push(roadX);
 
-        road.position.set(
-            isVertical ? (i/2 - roadCount/4) * 15 : 0,
-            0.025,
-            isVertical ? 0 : (i/2 - roadCount/4) * 15
-        );
-
-        road.material = new BABYLON.StandardMaterial("matRoad"+i, scene);
-        road.material.diffuseColor = new BABYLON.Color3(0.15,0.15,0.15);
-        road.checkCollisions = true;
+        let roadZ = BABYLON.MeshBuilder.CreateBox("roadZ"+i, {width: 3, height:0.05, depth: mapSize}, scene);
+        roadZ.position.set((i*(mapSize/buildingBlocks))-mapSize/2,0.025,0);
+        roadZ.material = new BABYLON.StandardMaterial("matRoadZ"+i, scene);
+        roadZ.material.diffuseColor = new BABYLON.Color3(0.15,0.15,0.15);
+        roads.push(roadZ);
     }
 
-    // Edificios variados
-    for(let i=0;i<buildingCount;i++){
-        let w = Math.random()*3+3;
-        let d = Math.random()*3+3;
-        let h = Math.random()*10+3;
-        let b = BABYLON.MeshBuilder.CreateBox("bldg"+i, {width:w, height:h, depth:d}, scene);
-        b.position.set(Math.random()*mapSize-mapSize/2, h/2, Math.random()*mapSize-mapSize/2);
-        b.material = new BABYLON.StandardMaterial("matB"+i, scene);
-        b.material.diffuseColor = new BABYLON.Color3(Math.random()*0.6+0.3, Math.random()*0.6+0.3, Math.random()*0.6+0.3);
-        b.checkCollisions = true;
-    }
+    // === Manzanas de edificios ===
+    const blockSize = mapSize/buildingBlocks;
+    for(let bx=0; bx<buildingBlocks; bx++){
+        for(let bz=0; bz<buildingBlocks; bz++){
+            for(let i=0; i<buildingsPerBlock; i++){
+                let w = 2 + Math.random()*2;
+                let d = 2 + Math.random()*2;
+                let h = 4 + Math.random()*6;
+                let offsetX = (Math.random()-0.5)*blockSize*0.6;
+                let offsetZ = (Math.random()-0.5)*blockSize*0.6;
 
-    // Parques con árboles
-    for(let i=0;i<parkCount;i++){
-        let park = BABYLON.MeshBuilder.CreateGround("park"+i, {width:15, height:15}, scene);
-        park.position.set(Math.random()*mapSize-mapSize/2, 0, Math.random()*mapSize-mapSize/2);
-        park.material = new BABYLON.StandardMaterial("matPark"+i, scene);
-        park.material.diffuseColor = new BABYLON.Color3(0.2,0.5,0.2);
-
-        // Árboles dentro del parque
-        for(let j=0;j<6;j++){
-            let trunk = BABYLON.MeshBuilder.CreateCylinder("trunk"+i+"_"+j, {height:1.5, diameterTop:0.3, diameterBottom:0.3}, scene);
-            trunk.position.set(park.position.x + Math.random()*10-5,0.75, park.position.z + Math.random()*10-5);
-            trunk.material = new BABYLON.StandardMaterial("matTrunk"+i+j, scene);
-            trunk.material.diffuseColor = new BABYLON.Color3(0.55,0.27,0.07);
-
-            let leaves = BABYLON.MeshBuilder.CreateSphere("leaves"+i+"_"+j, {diameter:1.5}, scene);
-            leaves.position.set(trunk.position.x, 1.6, trunk.position.z);
-            leaves.material = new BABYLON.StandardMaterial("matLeaves"+i+j, scene);
-            leaves.material.diffuseColor = new BABYLON.Color3(0.2+Math.random()*0.3, 0.6+Math.random()*0.3, 0.2+Math.random()*0.3);
-
-            trunk.checkCollisions = true;
-            leaves.checkCollisions = true;
+                let b = BABYLON.MeshBuilder.CreateBox("bldg"+bx+"_"+bz+"_"+i,
+                    {width:w, height:h, depth:d}, scene);
+                b.position.set(
+                    bx*blockSize - mapSize/2 + blockSize/2 + offsetX,
+                    h/2,
+                    bz*blockSize - mapSize/2 + blockSize/2 + offsetZ
+                );
+                b.material = new BABYLON.StandardMaterial("matB"+i, scene);
+                b.material.diffuseColor = new BABYLON.Color3(Math.random()*0.5+0.5, Math.random()*0.5+0.5, Math.random()*0.5+0.5);
+                b.checkCollisions = true;
+            }
         }
     }
 
-    // Plazas pequeñas
+    // === Parques con árboles ===
+    for(let i=0;i<treeCount;i++){
+        let trunk = BABYLON.MeshBuilder.CreateCylinder("trunk"+i, {height:1.5, diameterTop:0.3, diameterBottom:0.3}, scene);
+        trunk.position.set(Math.random()*mapSize-mapSize/2,0.75,Math.random()*mapSize-mapSize/2);
+        trunk.material = new BABYLON.StandardMaterial("matTrunk"+i, scene);
+        trunk.material.diffuseColor = new BABYLON.Color3(0.55,0.27,0.07);
+
+        let leaves = BABYLON.MeshBuilder.CreateSphere("leaves"+i, {diameter:1.5}, scene);
+        leaves.position.set(trunk.position.x, 1.6, trunk.position.z);
+        leaves.material = new BABYLON.StandardMaterial("matLeaves"+i, scene);
+        leaves.material.diffuseColor = new BABYLON.Color3(0.1+Math.random()*0.3, 0.5+Math.random()*0.5, 0.1+Math.random()*0.3);
+
+        trunk.checkCollisions = true;
+        leaves.checkCollisions = true;
+    }
+
+    // === Arbustos ===
+    for(let i=0;i<bushCount;i++){
+        let bush = BABYLON.MeshBuilder.CreateSphere("bush"+i, {diameter:0.5 + Math.random()*0.3}, scene);
+        bush.position.set(Math.random()*mapSize-mapSize/2, 0.25, Math.random()*mapSize-mapSize/2);
+        bush.material = new BABYLON.StandardMaterial("matBush"+i, scene);
+        bush.material.diffuseColor = new BABYLON.Color3(0.2+Math.random()*0.3,0.6+Math.random()*0.3,0.2+Math.random()*0.3);
+        bush.checkCollisions = true;
+    }
+
+    // === Plazas con fuentes ===
     for(let i=0;i<3;i++){
-        let plaza = BABYLON.MeshBuilder.CreateDisc("plaza"+i, {radius:8, tessellation:30}, scene);
+        let plaza = BABYLON.MeshBuilder.CreateDisc("plaza"+i, {radius: 6, tessellation:30}, scene);
         plaza.rotation.x = Math.PI/2;
         plaza.position.set(Math.random()*mapSize-mapSize/2, 0.01, Math.random()*mapSize-mapSize/2);
         plaza.material = new BABYLON.StandardMaterial("matPlaza"+i, scene);
-        plaza.material.diffuseColor = new BABYLON.Color3(0.6,0.6,0.6);
-        plaza.checkCollisions = true;
-    }
-}
+        plaza.material.diffuseColor = new BABYLON.Color3(0.8,0.8,0.8);
 
+        let fountain = BABYLON.MeshBuilder.CreateCylinder("fountain"+i, {diameterTop:2, diameterBottom:2, height:0.5}, scene);
+        fountain.position.set(plaza.position.x,0.25,plaza.position.z);
+        fountain.material = new BABYLON.StandardMaterial("matFountain"+i, scene);
+        fountain.material.diffuseColor = new BABYLON.Color3(0,0.5,0.8);
+    }
+
+    // === Farolas en las calles ===
+    for(let i=0;i<roads.length;i++){
+        if(Math.random() > 0.5) continue; // no poner farolas en todas
+
+        let pos = roads[i].position.clone();
+        pos.x += (Math.random()>0.5?2:-2); 
+        pos.y = 1;
+
+        let pole = BABYLON.MeshBuilder.CreateCylinder("lampPost"+i, {diameter:0.2, height:2}, scene);
+        pole.position.set(pos.x,1,pos.z);
+        pole.material = new BABYLON.StandardMaterial("matPole"+i, scene);
+        pole.material.diffuseColor = new BABYLON.Color3(0.3,0.3,0.3);
+
+        let lightBulb = BABYLON.MeshBuilder.CreateSphere("bulb"+i, {diameter:0.4}, scene);
+        lightBulb.position.set(pos.x,2.2,pos.z);
+        lightBulb.material = new BABYLON.StandardMaterial("matBulb"+i, scene);
+        lightBulb.material.emissiveColor = new BABYLON.Color3(1,1,0.6);
+
+        let lampLight = new BABYLON.PointLight("lampLight"+i, new BABYLON.Vector3(pos.x,2.2,pos.z), scene);
+        lampLight.intensity = 0.6;
+        lampLight.range = 8;
+    }
+
+    // === Vehículos en movimiento ===
+    let vehicles = [];
+    for(let i=0;i<8;i++){
+        let car = BABYLON.MeshBuilder.CreateBox("car"+i, {width:2, height:1, depth:1}, scene);
+        car.position.set(Math.random()*mapSize-mapSize/2,0.5, (Math.random()>0.5? -mapSize/2 : mapSize/2));
+        car.material = new BABYLON.StandardMaterial("matCar"+i, scene);
+        car.material.diffuseColor = new BABYLON.Color3(Math.random(), Math.random(), Math.random());
+        vehicles.push({mesh:car, dir: (Math.random()>0.5?1:-1)});
+    }
+
+    // === Animar vehículos ===
+    scene.onBeforeRenderObservable.add(()=>{
+        vehicles.forEach(v=>{
+            v.mesh.position.z += 0.2 * v.dir;
+            if(v.mesh.position.z > mapSize/2) v.mesh.position.z = -mapSize/2;
+            if(v.mesh.position.z < -mapSize/2) v.mesh.position.z = mapSize/2;
+        });
+    });
+}
 createCity();
+
 
 
 
