@@ -1,60 +1,64 @@
 // ======= Variables globales =======
-let canvas = document.getElementById('renderCanvas');
-let engine = new BABYLON.Engine(canvas, true);
-let scene = new BABYLON.Scene(engine);
+const canvas = document.getElementById('renderCanvas');
+const engine = new BABYLON.Engine(canvas, true);
+const scene = new BABYLON.Scene(engine);
 
-let camera = new BABYLON.UniversalCamera("camera1", new BABYLON.Vector3(0, 2, -5), scene);
+const camera = new BABYLON.UniversalCamera("camera1", new BABYLON.Vector3(0, 2, -5), scene);
 camera.attachControl(canvas, true);
-
-camera.speed = 0.2; // velocidad básica
-camera.angularSensibility = 400; // sensibilidad del mouse
+camera.speed = 0.2;
+camera.angularSensibility = 400;
 camera.applyGravity = true;
 camera.ellipsoid = new BABYLON.Vector3(0.5, 1, 0.5);
 
 // Luces
-let light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0, 1, 0), scene);
+const light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0,1,0), scene);
 light.intensity = 0.9;
 
 // Piso
-let ground = BABYLON.MeshBuilder.CreateGround("ground", {width:200, height:200}, scene);
+const ground = BABYLON.MeshBuilder.CreateGround("ground", {width:200, height:200}, scene);
 ground.checkCollisions = true;
 
 // Jugador local
-let localPlayer = {
+const localPlayer = {
     hp: 100,
-    canShoot: true,
+    canShoot: true
 };
 
 // Otros jugadores
-let others = new Map();
+const others = new Map();
 
-// ======= Controles teclado simple =======
-let inputMap = {};
+// ======= Controles teclado =======
+const inputMap = {};
 scene.actionManager = new BABYLON.ActionManager(scene);
 
-scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnKeyDownTrigger, function(evt){
-    inputMap[evt.sourceEvent.key] = true;
-}));
+scene.actionManager.registerAction(
+    new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnKeyDownTrigger, evt => {
+        inputMap[evt.sourceEvent.key.toLowerCase()] = true;
+    })
+);
+scene.actionManager.registerAction(
+    new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnKeyUpTrigger, evt => {
+        inputMap[evt.sourceEvent.key.toLowerCase()] = false;
+    })
+);
 
-scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnKeyUpTrigger, function(evt){
-    inputMap[evt.sourceEvent.key] = false;
-}));
+// ======= Movimiento FPS =======
+const MOVE_SPEED = 0.2;
+const RUN_MULT = 1.5;
 
-// ======= Movimiento básico =======
 scene.onBeforeRenderObservable.add(()=>{
-    let forward = new BABYLON.Vector3(
+    let dir = new BABYLON.Vector3.Zero();
+
+    const forward = new BABYLON.Vector3(
         Math.sin(camera.rotation.y),
         0,
         Math.cos(camera.rotation.y)
     );
-
-    let right = new BABYLON.Vector3(
+    const right = new BABYLON.Vector3(
         Math.sin(camera.rotation.y + Math.PI/2),
         0,
         Math.cos(camera.rotation.y + Math.PI/2)
     );
-
-    let dir = new BABYLON.Vector3.Zero();
 
     if(inputMap["w"]) dir.addInPlace(forward);
     if(inputMap["s"]) dir.subtractInPlace(forward);
@@ -63,40 +67,47 @@ scene.onBeforeRenderObservable.add(()=>{
 
     if(dir.lengthSquared() > 0){
         dir.normalize();
-        camera.position.addInPlace(dir.scale(0.2));
+        const speed = inputMap["shift"] ? MOVE_SPEED*RUN_MULT : MOVE_SPEED;
+        camera.position.addInPlace(dir.scale(speed));
     }
 });
 
 // ======= Función de disparo =======
-canvas.addEventListener('pointerdown', () => {
+function shoot(){
     if(!localPlayer.canShoot) return;
     localPlayer.canShoot = false;
     setTimeout(()=> localPlayer.canShoot = true, 200);
 
-    // Ray desde cámara
-    let origin = camera.position.clone();
-    let forward = new BABYLON.Vector3(
+    const origin = camera.position.clone();
+    const forward = new BABYLON.Vector3(
         Math.sin(camera.rotation.y),
         0,
         Math.cos(camera.rotation.y)
     );
 
-    let ray = new BABYLON.Ray(origin, forward, 50);
-    let hit = scene.pickWithRay(ray, mesh => others.has(mesh.name));
+    const ray = new BABYLON.Ray(origin, forward, 50);
+    const hit = scene.pickWithRay(ray, mesh => others.has(mesh.name));
+
+    // Efecto visual simple
+    const sphere = BABYLON.MeshBuilder.CreateSphere("muzzle", {diameter:0.1}, scene);
+    sphere.position = origin.add(forward.scale(1));
+    sphere.material = new BABYLON.StandardMaterial("mat", scene);
+    sphere.material.emissiveColor = new BABYLON.Color3(1,1,0);
+    setTimeout(()=> sphere.dispose(), 100);
 
     if(hit.hit){
         console.log("Impacto en jugador:", hit.pickedMesh.name);
-        // Aquí puedes emitir el evento via Socket.IO
+        // Aquí se emitiría Socket.IO hitPlayer
     }
-});
+}
 
-// ======= Loop =======
-engine.runRenderLoop(()=>{
-    scene.render();
-});
+canvas.addEventListener('pointerdown', shoot);
+
+// ======= Render loop =======
+engine.runRenderLoop(()=> scene.render());
 
 // ======= Resize =======
-window.addEventListener('resize', ()=>{ engine.resize(); });
+window.addEventListener('resize', ()=> engine.resize());
 
 // ======= Iniciar con click =======
 document.getElementById('startBtn').addEventListener('click', ()=>{
