@@ -1,15 +1,18 @@
+// Importar Three.js desde unpkg
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { PointerLockControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
 
+// Elementos HTML
 const canvas = document.getElementById('game');
 const startBtn = document.getElementById('startBtn');
 const hpEl = document.getElementById('hp');
 const playersEl = document.getElementById('players');
 const pingEl = document.getElementById('ping');
 
-const socket = io(); // del script /socket.io/socket.io.js
+// Conexión con socket.io
+const socket = io(); // requiere <script src="/socket.io/socket.io.js"></script> en el HTML
 
-// Escena base
+// Render y escena
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -22,21 +25,21 @@ camera.position.set(0, 1.2, 5);
 
 const controls = new PointerLockControls(camera, document.body);
 
-const light = new THREE.HemisphereLight(0xffffff, 0x223344, 0.9);
-scene.add(light);
+// Luces
+scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 0.9));
 const dir = new THREE.DirectionalLight(0xffffff, 0.4);
 dir.position.set(5, 10, 2);
 scene.add(dir);
 
-// Mapa low-poly
+// Mapa low poly
 const groundGeo = new THREE.PlaneGeometry(120, 120, 10, 10);
 groundGeo.rotateX(-Math.PI / 2);
-const groundMat = new THREE.MeshStandardMaterial({ color: 0x2a2f38, roughness: 1, metalness: 0 });
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x2a2f38 });
 const ground = new THREE.Mesh(groundGeo, groundMat);
 ground.receiveShadow = true;
 scene.add(ground);
 
-// Obstáculos simples
+// Obstáculos aleatorios
 for (let i = 0; i < 18; i++) {
   const box = new THREE.Mesh(
     new THREE.BoxGeometry(1 + Math.random()*2, 1 + Math.random()*2, 1 + Math.random()*2),
@@ -48,17 +51,16 @@ for (let i = 0; i < 18; i++) {
   scene.add(box);
 }
 
-// Estados
+// Estado
 let selfId = null;
 let hp = 100;
-let lastPing = '--';
 const key = {};
 const speed = 7.0;
-const players = new Map(); // id -> mesh
-const nameplates = new Map(); // id -> Sprite
-const bullets = new Map(); // id -> mesh
+const players = new Map();
+const nameplates = new Map();
+const bullets = new Map();
 
-// Helper: crear jugador (cubo)
+// --- Helpers ---
 function makePlayer(color = '#5aa9e6') {
   const geom = new THREE.BoxGeometry(0.8, 1.6, 0.8);
   const mat = new THREE.MeshStandardMaterial({ color });
@@ -124,21 +126,13 @@ function removeBullet(id) {
   bullets.delete(id);
 }
 
-// Entrada
+// --- Controles ---
 document.addEventListener('keydown', (e) => key[e.code] = true);
 document.addEventListener('keyup', (e) => key[e.code] = false);
 
-// Bloqueo de puntero para mirar/disparar
-startBtn.addEventListener('click', () => {
-  controls.lock();
-});
-
-controls.addEventListener('lock', () => {
-  startBtn.style.display = 'none';
-});
-controls.addEventListener('unlock', () => {
-  startBtn.style.display = '';
-});
+startBtn.addEventListener('click', () => controls.lock());
+controls.addEventListener('lock', () => startBtn.style.display = 'none');
+controls.addEventListener('unlock', () => startBtn.style.display = '');
 
 // Disparo
 document.addEventListener('mousedown', (e) => {
@@ -152,7 +146,7 @@ function shoot() {
   socket.emit('shoot', { dir: { x: dir.x, y: dir.y, z: dir.z } });
 }
 
-// Red: eventos
+// --- Red ---
 socket.on('init', ({ selfId: id, players: list }) => {
   selfId = id;
   list.forEach(spawnPlayer);
@@ -166,7 +160,6 @@ socket.on('state:snapshot', ({ players: list }) => {
   list.forEach(p => {
     if (!players.has(p.id)) return;
     const m = players.get(p.id);
-    // Interpolación ligera
     m.position.lerp(new THREE.Vector3(p.x, p.y, p.z), 0.5);
     m.rotation.y = p.ry;
     if (p.id === selfId) {
@@ -197,22 +190,16 @@ socket.on('player:respawn', ({ playerId, x, y, z, ry, hp: newHp }) => {
   }
 });
 
-// Ping simple
+// --- Ping ---
 setInterval(() => {
   const start = performance.now();
-  socket.timeout(1000).emit('ping:check', () => {
-    lastPing = Math.round(performance.now() - start) + 'ms';
-    pingEl.textContent = 'Ping: ' + lastPing;
+  socket.emit('ping:check', () => {
+    const latency = Math.round(performance.now() - start);
+    pingEl.textContent = `Ping: ${latency}ms`;
   });
 }, 2000);
-socket.on('connect', () => pingEl.textContent = 'Ping: --');
 
-// Servidor eco para ping
-socket.on('connect', () => {
-  socket.on('ping:check', (cb) => cb && cb());
-});
-
-// Loop cliente
+// --- Loop ---
 const clock = new THREE.Clock();
 
 function loop() {
@@ -224,7 +211,6 @@ function loop() {
 requestAnimationFrame(loop);
 
 function update(dt) {
-  // Movimiento local
   const dir = new THREE.Vector3();
   const forward = new THREE.Vector3();
   camera.getWorldDirection(forward);
@@ -243,29 +229,23 @@ function update(dt) {
     camera.position.add(dir);
   }
 
-  // Mantener "y" a 1.0 (sin gravedad en MVP)
   camera.position.y = 1.2;
 
-  // Actualizar rotación (ry) y enviar al server
   const ry = camera.rotation.y;
   socket.emit('state:update', { x: camera.position.x, y: 1.0, z: camera.position.z, ry });
 
-  // Seguir al propio "mesh" (si se quiere ver el propio cubo, opcional)
   const selfMesh = players.get(selfId);
   if (selfMesh) {
     selfMesh.position.set(camera.position.x, 1.0, camera.position.z);
     selfMesh.rotation.y = ry;
   }
 
-  // Avanzar balas localmente
   const toDelete = [];
   bullets.forEach((entry, id) => {
     const b = entry.data; const m = entry.mesh;
-    const dtLocal = dt;
-    m.position.x += b.vx * dtLocal;
-    m.position.y += b.vy * dtLocal;
-    m.position.z += b.vz * dtLocal;
-    // Despawn si se va lejos
+    m.position.x += b.vx * dt;
+    m.position.y += b.vy * dt;
+    m.position.z += b.vz * dt;
     if (m.position.length() > 500) toDelete.push(id);
   });
   toDelete.forEach(removeBullet);
