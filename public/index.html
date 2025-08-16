@@ -5,17 +5,94 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MVP Shooter 3D Low-Poly con Babylon.js</title>
   <link rel="stylesheet" href="style.css">
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #111;
+      font-family: Arial, sans-serif;
+      color: white;
+      overflow: hidden;
+    }
+    #menu {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.85);
+      padding: 20px;
+      border-radius: 10px;
+      text-align: center;
+      z-index: 10;
+    }
+    #menu input {
+      margin: 8px 0;
+      padding: 8px;
+      width: 200px;
+      border: none;
+      border-radius: 5px;
+    }
+    #menu button {
+      margin: 8px 0;
+      padding: 10px 20px;
+      background: #28a745;
+      border: none;
+      color: white;
+      font-size: 16px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #menu button:hover {
+      background: #218838;
+    }
+    #hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 5;
+    }
+    #crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 20px;
+      height: 20px;
+      margin-left: -10px;
+      margin-top: -10px;
+      border: 2px solid white;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 5;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+  </style>
 </head>
 <body>
-  <div id="ui">
-    <button id="startBtn">Click para jugar</button>
-    <div id="hud" class="hidden">
-      <span id="hp">HP: 100</span>
-      <span id="tip">WASD para moverte · Click para disparar · Shift corre</span>
-    </div>
+  <!-- Menú principal -->
+  <div id="menu">
+    <h2>🔥 Shooter 3D Low-Poly</h2>
+    <input type="text" id="playerName" placeholder="Tu nombre">
+    <input type="text" id="roomId" placeholder="ID de sala (ej: sala1)">
+    <button id="joinBtn">Unirse a sala</button>
+    <p style="font-size: 12px; color: #ccc;">Máx 12 jugadores por sala</p>
   </div>
+
+  <!-- HUD en juego -->
+  <div id="hud" class="hidden">
+    <span id="hp">HP: 100</span>
+    <span id="tip">WASD para moverte · Click para disparar · Shift corre</span>
+  </div>
+
+  <!-- Crosshair -->
+  <div id="crosshair"></div>
+
+  <!-- Canvas de Babylon -->
   <canvas id="renderCanvas"></canvas>
-<div id="crosshair"></div>
 
   <!-- Socket.IO -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
@@ -24,6 +101,30 @@
   <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
 
   <!-- Cliente -->
+  <script>
+    const socket = io();
+    let roomId, playerName;
+
+    document.getElementById("joinBtn").addEventListener("click", () => {
+      playerName = document.getElementById("playerName").value.trim();
+      roomId = document.getElementById("roomId").value.trim();
+
+      if (!playerName || !roomId) {
+        alert("Ingresa nombre y sala");
+        return;
+      }
+
+      // Ocultar menú, mostrar HUD
+      document.getElementById("menu").style.display = "none";
+      document.getElementById("hud").classList.remove("hidden");
+
+      // Enviar join al server
+      socket.emit("joinRoom", { roomId, name: playerName });
+
+      // Aquí arrancamos el juego
+      startGame(socket, roomId, playerName);
+    });
+  </script>
   <script src="client_babylon.js"></script>
 </body>
 </html>
