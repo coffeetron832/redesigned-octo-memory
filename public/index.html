@@ -16,14 +16,20 @@
   </div>
   <canvas id="c"></canvas>
 
-  <!-- Socket.IO cliente desde CDN -->
+  <!-- Socket.IO -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 
-  <!-- Three.js versión estable (r148) -->
-  <script src="https://unpkg.com/three@0.148.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.148.0/examples/js/controls/PointerLockControls.js"></script>
+  <!-- Three.js + PointerLockControls como módulo -->
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+    import { PointerLockControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
 
-  <!-- Tu cliente -->
-  <script src="client.js"></script>
+    // Hacemos global para que client.js pueda usarlo
+    window.THREE = THREE;
+    window.PointerLockControls = PointerLockControls;
+
+    // Ahora tu client.js puede usar PointerLockControls
+    import './client.js';
+  </script>
 </body>
 </html>
