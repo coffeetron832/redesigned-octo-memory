@@ -22,7 +22,7 @@ let camera = new BABYLON.FollowCamera("camera1", localPlayer.mesh.position.add(n
 camera.lockedTarget = localPlayer.mesh;
 camera.radius = 5;
 camera.heightOffset = 2;
-camera.rotationOffset = 0; // rotación inicial
+camera.rotationOffset = 0;
 camera.cameraAcceleration = 0.05;
 camera.maxCameraSpeed = 20;
 camera.attachControl(canvas, true);
@@ -71,17 +71,9 @@ scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(
 scene.onBeforeRenderObservable.add(()=>{
     let dir = new BABYLON.Vector3.Zero();
 
-    // Vector forward / right según cámara
-    let forward = new BABYLON.Vector3(
-        Math.sin(camera.alpha),
-        0,
-        Math.cos(camera.alpha)
-    );
-    let right = new BABYLON.Vector3(
-        Math.sin(camera.alpha + Math.PI/2),
-        0,
-        Math.cos(camera.alpha + Math.PI/2)
-    );
+    // Usamos getDirection para obtener forward y right reales de la cámara
+    let forward = camera.getDirection(BABYLON.Axis.Z).normalize();
+    let right = camera.getDirection(BABYLON.Axis.X).normalize();
 
     if(inputMap["w"]) dir.addInPlace(forward);
     if(inputMap["s"]) dir.subtractInPlace(forward);
@@ -90,10 +82,11 @@ scene.onBeforeRenderObservable.add(()=>{
 
     if(dir.lengthSquared() > 0){
         dir.normalize();
-        localPlayer.mesh.moveWithCollisions(dir.scale(0.3)); // velocidad
+        localPlayer.mesh.moveWithCollisions(dir.scale(0.3));
+
         // girar jugador hacia dirección de movimiento
         let targetRotation = Math.atan2(dir.x, dir.z);
-        localPlayer.mesh.rotation.y += (targetRotation - localPlayer.mesh.rotation.y) * 0.2; // suavizado
+        localPlayer.mesh.rotation.y += (targetRotation - localPlayer.mesh.rotation.y) * 0.2;
     }
 });
 
@@ -104,7 +97,7 @@ canvas.addEventListener('pointerdown', ()=>{
     setTimeout(()=> localPlayer.canShoot = true, 200);
 
     let origin = localPlayer.mesh.position.clone();
-    let forward = new BABYLON.Vector3(Math.sin(camera.alpha),0,Math.cos(camera.alpha));
+    let forward = camera.getDirection(BABYLON.Axis.Z).normalize();
     let ray = new BABYLON.Ray(origin, forward, 50);
     let hit = scene.pickWithRay(ray, mesh=>mesh!=localPlayer.mesh);
     if(hit.hit){
