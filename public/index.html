@@ -1,10 +1,10 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>MVP Shooter 3D Low-Poly</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MVP Shooter 3D Low-Poly con Babylon.js</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="ui">
@@ -14,22 +14,15 @@
       <span id="tip">WASD para moverte · Click para disparar · Shift corre</span>
     </div>
   </div>
-  <canvas id="c"></canvas>
+  <canvas id="renderCanvas"></canvas>
 
   <!-- Socket.IO -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <!-- Babylon.js CDN -->
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
 
-  <!-- Three.js + PointerLockControls como módulo -->
-  <script type="module">
-    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-    import { PointerLockControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
-
-    // Hacemos global para que client.js pueda usarlo
-    window.THREE = THREE;
-    window.PointerLockControls = PointerLockControls;
-
-    // Ahora tu client.js puede usar PointerLockControls
-    import './client.js';
-  </script>
+  <!-- Cliente -->
+  <script src="client_babylon.js"></script>
 </body>
 </html>
