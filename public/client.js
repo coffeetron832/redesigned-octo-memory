@@ -57,7 +57,8 @@ function initThree() {
   }
 
   // Controles estilo FPS (Pointer Lock)
-  controls = new THREE.PointerLockControls(camera, document.body);
+  controls = new PointerLockControls(camera, document.body);
+
   document.getElementById('startBtn').addEventListener('click', () => {
     controls.lock();
   });
