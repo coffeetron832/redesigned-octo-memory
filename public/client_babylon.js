@@ -17,15 +17,16 @@ localPlayer.mesh.material = new BABYLON.StandardMaterial("matP", scene);
 localPlayer.mesh.material.diffuseColor = new BABYLON.Color3(0.8,0.3,0.6);
 localPlayer.mesh.checkCollisions = true;
 
-// ======= Cámara tercera persona =======
-let camera = new BABYLON.FollowCamera("camera1", localPlayer.mesh.position.add(new BABYLON.Vector3(0,2,-5)), scene);
-camera.lockedTarget = localPlayer.mesh;
-camera.radius = 5;
-camera.heightOffset = 2;
-camera.rotationOffset = 0;
-camera.cameraAcceleration = 0.05;
-camera.maxCameraSpeed = 20;
+// ======= Cámara estilo GTA =======
+let camera = new BABYLON.ArcRotateCamera("arcCam", -Math.PI/2, Math.PI/3, 6, localPlayer.mesh.position, scene);
 camera.attachControl(canvas, true);
+camera.lowerRadiusLimit = 2;
+camera.upperRadiusLimit = 12;
+camera.wheelDeltaPercentage = 0.01;
+camera.checkCollisions = true;
+camera.collisionRadius = new BABYLON.Vector3(0.5,0.5,0.5);
+camera.upperBetaLimit = Math.PI/2.2; // evitar mirar debajo del suelo
+camera.lowerBetaLimit = 0.1;
 
 // ======= Luz =======
 let light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0,1,0), scene);
@@ -71,14 +72,17 @@ scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(
 scene.onBeforeRenderObservable.add(()=>{
     let dir = new BABYLON.Vector3.Zero();
 
-    // Usamos getDirection para obtener forward y right reales de la cámara
-    let forward = camera.getDirection(BABYLON.Axis.Z).normalize();
-    let right = camera.getDirection(BABYLON.Axis.X).normalize();
+    // forward/right según cámara horizontal (proyección XZ)
+    let camForward = camera.getTarget().subtract(camera.position);
+    camForward.y = 0;
+    camForward.normalize();
 
-    if(inputMap["w"]) dir.addInPlace(forward);
-    if(inputMap["s"]) dir.subtractInPlace(forward);
-    if(inputMap["a"]) dir.subtractInPlace(right);
-    if(inputMap["d"]) dir.addInPlace(right);
+    let camRight = new BABYLON.Vector3(-camForward.z, 0, camForward.x); // perpendicular en XZ
+
+    if(inputMap["w"]) dir.addInPlace(camForward);
+    if(inputMap["s"]) dir.subtractInPlace(camForward);
+    if(inputMap["a"]) dir.subtractInPlace(camRight);
+    if(inputMap["d"]) dir.addInPlace(camRight);
 
     if(dir.lengthSquared() > 0){
         dir.normalize();
@@ -97,7 +101,7 @@ canvas.addEventListener('pointerdown', ()=>{
     setTimeout(()=> localPlayer.canShoot = true, 200);
 
     let origin = localPlayer.mesh.position.clone();
-    let forward = camera.getDirection(BABYLON.Axis.Z).normalize();
+    let forward = camera.getTarget().subtract(camera.position).normalize();
     let ray = new BABYLON.Ray(origin, forward, 50);
     let hit = scene.pickWithRay(ray, mesh=>mesh!=localPlayer.mesh);
     if(hit.hit){
