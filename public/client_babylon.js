@@ -17,15 +17,19 @@ localPlayer.mesh.material = new BABYLON.StandardMaterial("matP", scene);
 localPlayer.mesh.material.diffuseColor = new BABYLON.Color3(0.8,0.3,0.6);
 localPlayer.mesh.checkCollisions = true;
 
-// ======= Cámara tercera persona =======
-let camera = new BABYLON.FollowCamera("camera1", new BABYLON.Vector3(0,2,-5), scene);
-camera.lockedTarget = localPlayer.mesh;
-camera.radius = 5;
-camera.heightOffset = 2;
-camera.rotationOffset = 180;
-camera.cameraAcceleration = 0.05;
-camera.maxCameraSpeed = 20;
+// ======= Cámara tercera persona estable =======
+let camera = new BABYLON.ArcRotateCamera(
+    "camera",
+    Math.PI/2,      // alpha
+    Math.PI/4,      // beta
+    6,              // radius
+    localPlayer.mesh.position,
+    scene
+);
 camera.attachControl(canvas, true);
+camera.lowerRadiusLimit = 3;
+camera.upperRadiusLimit = 10;
+camera.wheelDeltaPercentage = 0.01;
 
 // ======= Luz =======
 let light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0,1,0), scene);
@@ -61,26 +65,45 @@ createMap();
 // ======= Controles teclado =======
 let inputMap = {};
 scene.actionManager = new BABYLON.ActionManager(scene);
-scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnKeyDownTrigger, e => inputMap[e.sourceEvent.key.toLowerCase()]=true));
-scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnKeyUpTrigger, e => inputMap[e.sourceEvent.key.toLowerCase()]=false));
+scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(
+    BABYLON.ActionManager.OnKeyDownTrigger,
+    e => inputMap[e.sourceEvent.key.toLowerCase()] = true
+));
+scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(
+    BABYLON.ActionManager.OnKeyUpTrigger,
+    e => inputMap[e.sourceEvent.key.toLowerCase()] = false
+));
 
 // ======= Movimiento tercera persona =======
 scene.onBeforeRenderObservable.add(()=>{
     let dir = new BABYLON.Vector3.Zero();
 
-    let forward = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y),0,Math.cos(localPlayer.mesh.rotation.y));
-    let right = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y + Math.PI/2),0,Math.cos(localPlayer.mesh.rotation.y + Math.PI/2));
+    // Vectores forward/right relativos a cámara
+    let forward = new BABYLON.Vector3(
+        Math.sin(camera.alpha),
+        0,
+        Math.cos(camera.alpha)
+    );
+    let right = new BABYLON.Vector3(
+        Math.sin(camera.alpha + Math.PI/2),
+        0,
+        Math.cos(camera.alpha + Math.PI/2)
+    );
 
     if(inputMap["w"]) dir.addInPlace(forward);
     if(inputMap["s"]) dir.subtractInPlace(forward);
     if(inputMap["a"]) dir.subtractInPlace(right);
     if(inputMap["d"]) dir.addInPlace(right);
 
-    if(dir.lengthSquared()>0){
+    if(dir.lengthSquared() > 0){
         dir.normalize();
-        localPlayer.mesh.moveWithCollisions(dir.scale(0.2));
+        localPlayer.mesh.moveWithCollisions(dir.scale(0.3)); // velocidad
+        // girar jugador hacia dirección de movimiento
         localPlayer.mesh.rotation.y = Math.atan2(dir.x, dir.z);
     }
+
+    // Mantener cámara centrada
+    camera.target = localPlayer.mesh.position;
 });
 
 // ======= Disparo =======
@@ -90,7 +113,7 @@ canvas.addEventListener('pointerdown', ()=>{
     setTimeout(()=> localPlayer.canShoot = true, 200);
 
     let origin = localPlayer.mesh.position.clone();
-    let forward = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y),0,Math.cos(localPlayer.mesh.rotation.y));
+    let forward = new BABYLON.Vector3(Math.sin(camera.alpha),0,Math.cos(camera.alpha));
     let ray = new BABYLON.Ray(origin, forward, 50);
     let hit = scene.pickWithRay(ray, mesh=>mesh!=localPlayer.mesh);
     if(hit.hit){
