@@ -3,22 +3,31 @@ let canvas = document.getElementById('renderCanvas');
 let engine = new BABYLON.Engine(canvas, true);
 let scene = new BABYLON.Scene(engine);
 
-// ======= Jugador =======
+// ======= Jugador local =======
 let localPlayer = {
     hp: 100,
     canShoot: true,
     mesh: null,
 };
 
+// ======= Crear jugador =======
+localPlayer.mesh = BABYLON.MeshBuilder.CreateCapsule("player", {radius:0.5, height:1.5}, scene);
+localPlayer.mesh.position.set(0, 1, 0);
+localPlayer.mesh.material = new BABYLON.StandardMaterial("matP", scene);
+localPlayer.mesh.material.diffuseColor = new BABYLON.Color3(0.8,0.3,0.6);
+localPlayer.mesh.checkCollisions = true;
+
 // ======= Cámara tercera persona =======
-let camera = new BABYLON.FollowCamera("camera1", new BABYLON.Vector3(0, 2, -5), scene);
+let camera = new BABYLON.FollowCamera("camera1", new BABYLON.Vector3(0,2,-5), scene);
+camera.lockedTarget = localPlayer.mesh;
 camera.radius = 5;
 camera.heightOffset = 2;
 camera.rotationOffset = 180;
 camera.cameraAcceleration = 0.05;
 camera.maxCameraSpeed = 20;
+camera.attachControl(canvas, true);
 
-// ======= Luces =======
+// ======= Luz =======
 let light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0,1,0), scene);
 light.intensity = 0.9;
 
@@ -49,27 +58,18 @@ function createMap() {
 }
 createMap();
 
-// ======= Jugador mesh =======
-localPlayer.mesh = BABYLON.MeshBuilder.CreateCapsule("player", {radius:0.5, height:1.5}, scene);
-localPlayer.mesh.position.set(0, 1, 0);
-localPlayer.mesh.material = new BABYLON.StandardMaterial("matP", scene);
-localPlayer.mesh.material.diffuseColor = new BABYLON.Color3(0.8,0.3,0.6);
-localPlayer.mesh.checkCollisions = true;
-
-// Cámara sigue al jugador
-camera.lockedTarget = localPlayer.mesh;
-
 // ======= Controles teclado =======
 let inputMap = {};
 scene.actionManager = new BABYLON.ActionManager(scene);
 scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnKeyDownTrigger, e => inputMap[e.sourceEvent.key.toLowerCase()]=true));
 scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnKeyUpTrigger, e => inputMap[e.sourceEvent.key.toLowerCase()]=false));
 
-// ======= Movimiento FPS tercera persona =======
+// ======= Movimiento tercera persona =======
 scene.onBeforeRenderObservable.add(()=>{
     let dir = new BABYLON.Vector3.Zero();
-    let forward = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y), 0, Math.cos(localPlayer.mesh.rotation.y));
-    let right = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y+Math.PI/2), 0, Math.cos(localPlayer.mesh.rotation.y+Math.PI/2));
+
+    let forward = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y),0,Math.cos(localPlayer.mesh.rotation.y));
+    let right = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y + Math.PI/2),0,Math.cos(localPlayer.mesh.rotation.y + Math.PI/2));
 
     if(inputMap["w"]) dir.addInPlace(forward);
     if(inputMap["s"]) dir.subtractInPlace(forward);
@@ -79,7 +79,6 @@ scene.onBeforeRenderObservable.add(()=>{
     if(dir.lengthSquared()>0){
         dir.normalize();
         localPlayer.mesh.moveWithCollisions(dir.scale(0.2));
-        // Rotación suave hacia dirección
         localPlayer.mesh.rotation.y = Math.atan2(dir.x, dir.z);
     }
 });
@@ -101,9 +100,11 @@ canvas.addEventListener('pointerdown', ()=>{
 
 // ======= Loop =======
 engine.runRenderLoop(()=>{ scene.render(); });
+
+// ======= Resize =======
 window.addEventListener('resize', ()=>engine.resize());
 
-// ======= Inicio click =======
+// ======= Iniciar con click =======
 document.getElementById('startBtn').addEventListener('click', ()=>{
     canvas.requestPointerLock();
     document.getElementById('startBtn').classList.add('hidden');
