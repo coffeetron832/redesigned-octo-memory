@@ -17,19 +17,15 @@ localPlayer.mesh.material = new BABYLON.StandardMaterial("matP", scene);
 localPlayer.mesh.material.diffuseColor = new BABYLON.Color3(0.8,0.3,0.6);
 localPlayer.mesh.checkCollisions = true;
 
-// ======= Cámara tercera persona estable =======
-let camera = new BABYLON.ArcRotateCamera(
-    "camera",
-    Math.PI/2,      // alpha
-    Math.PI/4,      // beta
-    6,              // radius
-    localPlayer.mesh.position,
-    scene
-);
+// ======= Cámara tercera persona =======
+let camera = new BABYLON.FollowCamera("camera1", localPlayer.mesh.position.add(new BABYLON.Vector3(0,2,-5)), scene);
+camera.lockedTarget = localPlayer.mesh;
+camera.radius = 5;
+camera.heightOffset = 2;
+camera.rotationOffset = 0; // rotación inicial
+camera.cameraAcceleration = 0.05;
+camera.maxCameraSpeed = 20;
 camera.attachControl(canvas, true);
-camera.lowerRadiusLimit = 3;
-camera.upperRadiusLimit = 10;
-camera.wheelDeltaPercentage = 0.01;
 
 // ======= Luz =======
 let light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0,1,0), scene);
@@ -41,7 +37,6 @@ ground.checkCollisions = true;
 
 // ======= Mapa low-poly: bosque + ciudad =======
 function createMap() {
-    // Árboles (bosque)
     for(let i=0;i<50;i++){
         let trunk = BABYLON.MeshBuilder.CreateBox("trunk"+i, {height:1.5, width:0.3, depth:0.3}, scene);
         trunk.position.set(Math.random()*180-90,0.75, Math.random()*180-90);
@@ -50,8 +45,6 @@ function createMap() {
         trunk.checkCollisions = true;
         leaves.checkCollisions = true;
     }
-
-    // Edificios (ciudad)
     for(let i=0;i<20;i++){
         let b = BABYLON.MeshBuilder.CreateBox("bldg"+i, {height:Math.random()*3+1, width:2, depth:2}, scene);
         b.position.set(Math.random()*80-40, b.scaling.y/2, Math.random()*80-40);
@@ -74,11 +67,11 @@ scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(
     e => inputMap[e.sourceEvent.key.toLowerCase()] = false
 ));
 
-// ======= Movimiento tercera persona =======
+// ======= Movimiento relativa a cámara =======
 scene.onBeforeRenderObservable.add(()=>{
     let dir = new BABYLON.Vector3.Zero();
 
-    // Vectores forward/right relativos a cámara
+    // Vector forward / right según cámara
     let forward = new BABYLON.Vector3(
         Math.sin(camera.alpha),
         0,
@@ -99,11 +92,9 @@ scene.onBeforeRenderObservable.add(()=>{
         dir.normalize();
         localPlayer.mesh.moveWithCollisions(dir.scale(0.3)); // velocidad
         // girar jugador hacia dirección de movimiento
-        localPlayer.mesh.rotation.y = Math.atan2(dir.x, dir.z);
+        let targetRotation = Math.atan2(dir.x, dir.z);
+        localPlayer.mesh.rotation.y += (targetRotation - localPlayer.mesh.rotation.y) * 0.2; // suavizado
     }
-
-    // Mantener cámara centrada
-    camera.target = localPlayer.mesh.position;
 });
 
 // ======= Disparo =======
