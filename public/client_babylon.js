@@ -5,6 +5,8 @@ let scene = new BABYLON.Scene(engine);
 
 // ======= Jugador local =======
 let localPlayer = {
+    id: null,
+    room: null,
     hp: 100,
     canShoot: true,
     mesh: null,
@@ -18,6 +20,14 @@ let localPlayer = {
         mesh: null
     }
 };
+
+// ======= Socket.IO =======
+const socket = io();
+
+// Preguntar sala al jugador
+let roomName = prompt("Ingresa nombre de la sala:", "Sala1");
+if (!roomName) roomName = "Sala1";
+socket.emit("joinRoom", { room: roomName });
 
 // ======= Crear jugador =======
 localPlayer.mesh = BABYLON.MeshBuilder.CreateCapsule("player", {radius:0.5, height:1.5}, scene);
@@ -232,8 +242,6 @@ function setupDayNightCycle(scene) {
 
 setupDayNightCycle(scene);
 
-
-
 // ======= Controles teclado =======
 let inputMap = {};
 scene.actionManager = new BABYLON.ActionManager(scene);
@@ -246,7 +254,7 @@ scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(
     e => inputMap[e.sourceEvent.key.toLowerCase()] = false
 ));
 
-// Recarga tecla R
+// Recargar con R
 scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(
     BABYLON.ActionManager.OnKeyDownTrigger,
     e => {
@@ -257,7 +265,7 @@ scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(
     }
 ));
 
-// ======= Movimiento relativa a cámara =======
+// ======= Movimiento =======
 scene.onBeforeRenderObservable.add(()=>{
     let dir = new BABYLON.Vector3.Zero();
     let camForward = camera.getTarget().subtract(camera.position);
@@ -275,6 +283,18 @@ scene.onBeforeRenderObservable.add(()=>{
         localPlayer.mesh.moveWithCollisions(dir.scale(0.3));
         let targetRotation = Math.atan2(dir.x, dir.z);
         localPlayer.mesh.rotation.y += (targetRotation - localPlayer.mesh.rotation.y) * 0.2;
+    }
+
+    // Enviar posición al servidor
+    if(localPlayer.id){
+        socket.emit("updatePos", {
+            id: localPlayer.id,
+            room: roomName,
+            x: localPlayer.mesh.position.x,
+            y: localPlayer.mesh.position.y,
+            z: localPlayer.mesh.position.z,
+            rot: localPlayer.mesh.rotation.y
+        });
     }
 });
 
@@ -296,6 +316,9 @@ canvas.addEventListener('pointerdown', ()=>{
         console.log(`Disparo impactó en: ${hit.pickedMesh.name}`);
     }
 
+    // Enviar disparo al servidor
+    socket.emit("shoot", {id: localPlayer.id, room: roomName, origin, forward});
+
     // Bala visual
     let bullet = BABYLON.MeshBuilder.CreateSphere("bullet", {diameter:0.1}, scene);
     bullet.position = origin.clone();
@@ -312,13 +335,46 @@ canvas.addEventListener('pointerdown', ()=>{
     });
 });
 
+// ======= Otros jugadores =======
+let remotePlayers = {};
+
+socket.on("init", data=>{
+    localPlayer.id = data.id;
+    console.log("Conectado como:", localPlayer.id, "en sala:", roomName);
+});
+
+socket.on("spawn", data=>{
+    if(remotePlayers[data.id]) return;
+    let p = BABYLON.MeshBuilder.CreateCapsule("remote"+data.id, {radius:0.5, height:1.5}, scene);
+    p.position.set(data.x, data.y, data.z);
+    let mat = new BABYLON.StandardMaterial("matR"+data.id, scene);
+    mat.diffuseColor = new BABYLON.Color3(Math.random(), Math.random(), Math.random());
+    p.material = mat;
+    remotePlayers[data.id] = p;
+});
+
+socket.on("despawn", id=>{
+    if(remotePlayers[id]){
+        remotePlayers[id].dispose();
+        delete remotePlayers[id];
+    }
+});
+
+socket.on("updatePos", data=>{
+    let p = remotePlayers[data.id];
+    if(p){
+        p.position.set(data.x, data.y, data.z);
+        p.rotation.y = data.rot;
+    }
+});
+
 // ======= Loop =======
 engine.runRenderLoop(()=>{ scene.render(); });
 
 // ======= Resize =======
 window.addEventListener('resize', ()=>engine.resize());
 
-// ======= Iniciar con click =======
+// ======= Iniciar =======
 document.getElementById('startBtn').addEventListener('click', ()=>{
     canvas.requestPointerLock();
     document.getElementById('startBtn').classList.add('hidden');
