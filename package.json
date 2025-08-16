@@ -1,0 +1,14 @@
+{
+  "name": "lowpoly-shooter-mvp",
+  "version": "1.0.0",
+  "description": "Shooter 3D low poly multijugador en linea (MVP)",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}
