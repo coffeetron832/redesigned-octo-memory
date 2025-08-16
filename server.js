@@ -1,68 +1,68 @@
-// server.js
-const path = require('path');
-const express = require('express');
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+
 const app = express();
-const http = require('http').createServer(app);
-const io = require('socket.io')(http, { cors: { origin: "*" } });
+const server = http.createServer(app);
+const io = new Server(server);
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static("public")); // tu carpeta con index.html y cliente
 
-const players = new Map(); // socketId -> { x,y,z, rx,ry,rz, hp }
+// === Manejo de salas ===
+const rooms = {}; // { roomId: { players: {} } }
 
-io.on('connection', (socket) => {
-  // Estado inicial del nuevo jugador
-  players.set(socket.id, {
-    x: 0, y: 1.2, z: 0,
-    rx: 0, ry: 0, rz: 0,
-    hp: 100,
+io.on("connection", (socket) => {
+  console.log("Jugador conectado:", socket.id);
+
+  socket.on("joinRoom", ({ roomId, name }) => {
+    if (!rooms[roomId]) {
+      rooms[roomId] = { players: {} };
+    }
+
+    if (Object.keys(rooms[roomId].players).length >= 12) {
+      socket.emit("roomFull");
+      return;
+    }
+
+    // Agregar jugador
+    rooms[roomId].players[socket.id] = {
+      id: socket.id,
+      name,
+      x: 0,
+      y: 1,
+      z: 0,
+    };
+
+    socket.join(roomId);
+
+    // Avisar a todos
+    io.to(roomId).emit("updatePlayers", rooms[roomId].players);
   });
 
-  // Enviar a este jugador quiénes están ya conectados
-  socket.emit('currentPlayers', Object.fromEntries(players));
+  socket.on("move", ({ roomId, x, y, z, rotY }) => {
+    if (rooms[roomId] && rooms[roomId].players[socket.id]) {
+      rooms[roomId].players[socket.id].x = x;
+      rooms[roomId].players[socket.id].y = y;
+      rooms[roomId].players[socket.id].z = z;
+      rooms[roomId].players[socket.id].rotY = rotY;
 
-  // Avisar a todos del nuevo jugador
-  io.emit('playerJoined', { id: socket.id, state: players.get(socket.id) });
-
-  // Actualizaciones de pose (posición/rotación)
-  socket.on('updateState', (state) => {
-    const p = players.get(socket.id);
-    if (!p) return;
-    p.x = state.x; p.y = state.y; p.z = state.z;
-    p.rx = state.rx; p.ry = state.ry; p.rz = state.rz;
-    // Reenvía a los demás (no al mismo)
-    socket.broadcast.emit('playerMoved', { id: socket.id, state: p });
-  });
-
-  // Disparo (raycast resuelto en el cliente que impacta)
-  socket.on('shotFired', (data) => {
-    // Solo se retransmite para efectos (muzzle/sonido) y para que
-    // el cliente impactado verifique si le pegó
-    socket.broadcast.emit('shotFired', { id: socket.id, data });
-  });
-
-  // Reporte de impacto (cliente que calcula raycast manda a server)
-  socket.on('hitPlayer', ({ targetId, damage }) => {
-    const victim = players.get(targetId);
-    if (!victim) return;
-    victim.hp = Math.max(0, victim.hp - (damage || 20));
-    io.emit('playerDamaged', { id: targetId, hp: victim.hp });
-    if (victim.hp <= 0) {
-      // Respawn sencillo
-      victim.hp = 100;
-      victim.x = (Math.random() - 0.5) * 10;
-      victim.z = (Math.random() - 0.5) * 10;
-      victim.y = 1.2;
-      io.emit('playerRespawn', { id: targetId, state: victim });
+      io.to(roomId).emit("updatePlayers", rooms[roomId].players);
     }
   });
 
-  socket.on('disconnect', () => {
-    players.delete(socket.id);
-    io.emit('playerLeft', { id: socket.id });
+  socket.on("shoot", ({ roomId, dir }) => {
+    io.to(roomId).emit("playerShoot", { id: socket.id, dir });
+  });
+
+  socket.on("disconnect", () => {
+    for (let roomId in rooms) {
+      if (rooms[roomId].players[socket.id]) {
+        delete rooms[roomId].players[socket.id];
+        io.to(roomId).emit("updatePlayers", rooms[roomId].players);
+      }
+    }
   });
 });
 
 const PORT = process.env.PORT || 3000;
-http.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
-});
+server.listen(PORT, () => console.log("Servidor en puerto", PORT));
