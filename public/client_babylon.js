@@ -49,7 +49,12 @@ let light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0,1,0), s
 light.intensity = 0.9;
 
 // ======= Piso =======
+let groundMat = new BABYLON.StandardMaterial("groundMat", scene);
+groundMat.diffuseTexture = new BABYLON.Texture("textures/grass.jpg", scene);
+groundMat.specularColor = new BABYLON.Color3(0,0,0);
+
 let ground = BABYLON.MeshBuilder.CreateGround("ground", {width:200, height:200}, scene);
+ground.material = groundMat;
 ground.checkCollisions = true;
 
 // ======= Mapa  =======
@@ -68,19 +73,29 @@ function createCity() {
         // Horizontal (X)
         let roadX = BABYLON.MeshBuilder.CreateBox("roadX"+i, {width: mapSize, height:0.05, depth: 3}, scene);
         roadX.position.set(0,0.025, (i*blockSize)-mapSize/2);
-        roadX.material = new BABYLON.StandardMaterial("matRoadX"+i, scene);
-        roadX.material.diffuseColor = new BABYLON.Color3(0.15,0.15,0.15);
+        let roadMatX = new BABYLON.StandardMaterial("matRoadX"+i, scene);
+        roadMatX.diffuseTexture = new BABYLON.Texture("textures/asphalt.jpg", scene);
+        roadMatX.specularColor = new BABYLON.Color3(0,0,0);
+        roadX.material = roadMatX;
         roads.push(roadX);
 
         // Vertical (Z)
         let roadZ = BABYLON.MeshBuilder.CreateBox("roadZ"+i, {width: 3, height:0.05, depth: mapSize}, scene);
         roadZ.position.set((i*blockSize)-mapSize/2,0.025,0);
-        roadZ.material = new BABYLON.StandardMaterial("matRoadZ"+i, scene);
-        roadZ.material.diffuseColor = new BABYLON.Color3(0.15,0.15,0.15);
+        let roadMatZ = new BABYLON.StandardMaterial("matRoadZ"+i, scene);
+        roadMatZ.diffuseTexture = new BABYLON.Texture("textures/asphalt.jpg", scene);
+        roadMatZ.specularColor = new BABYLON.Color3(0,0,0);
+        roadZ.material = roadMatZ;
         roads.push(roadZ);
     }
 
     // === Edificios organizados en bloques ===
+    let wallTextures = [
+        "textures/wall_brick.jpg",
+        "textures/wall_concrete.jpg",
+        "textures/wall_glass.jpg"
+    ];
+
     for (let bx=0; bx<buildingBlocks; bx++) {
         for (let bz=0; bz<buildingBlocks; bz++) {
             for (let i=0; i<buildingsPerBlock; i++) {
@@ -88,7 +103,6 @@ function createCity() {
                 let d = 2 + Math.random()*2;
                 let h = 4 + Math.random()*6;
 
-                // edificios centrados en su bloque
                 let offsetX = (Math.random()-0.5)*blockSize*0.5;
                 let offsetZ = (Math.random()-0.5)*blockSize*0.5;
 
@@ -99,8 +113,10 @@ function createCity() {
                     h/2,
                     bz*blockSize - mapSize/2 + blockSize/2 + offsetZ
                 );
-                b.material = new BABYLON.StandardMaterial("matB"+i, scene);
-                b.material.diffuseColor = new BABYLON.Color3(Math.random()*0.5+0.5, Math.random()*0.5+0.5, Math.random()*0.5+0.5);
+                let matB = new BABYLON.StandardMaterial("matB"+i, scene);
+                matB.diffuseTexture = new BABYLON.Texture(wallTextures[Math.floor(Math.random()*wallTextures.length)], scene);
+                matB.specularColor = new BABYLON.Color3(0,0,0);
+                b.material = matB;
                 b.checkCollisions = true;
             }
         }
@@ -114,12 +130,13 @@ function createCity() {
         let trunk = BABYLON.MeshBuilder.CreateCylinder("trunk"+i, {height:1.5, diameterTop:0.3, diameterBottom:0.3}, scene);
         trunk.position.set(x+(Math.random()-0.5)*blockSize*0.8,0.75,z+(Math.random()-0.5)*blockSize*0.8);
         trunk.material = new BABYLON.StandardMaterial("matTrunk"+i, scene);
-        trunk.material.diffuseColor = new BABYLON.Color3(0.55,0.27,0.07);
+        trunk.material.diffuseTexture = new BABYLON.Texture("textures/wood.jpg", scene);
 
         let leaves = BABYLON.MeshBuilder.CreateSphere("leaves"+i, {diameter:1.5}, scene);
         leaves.position.set(trunk.position.x, 1.6, trunk.position.z);
         leaves.material = new BABYLON.StandardMaterial("matLeaves"+i, scene);
-        leaves.material.diffuseColor = new BABYLON.Color3(0.1+Math.random()*0.3, 0.5+Math.random()*0.5, 0.1+Math.random()*0.3);
+        leaves.material.diffuseTexture = new BABYLON.Texture("textures/leaves.png", scene);
+        leaves.material.diffuseTexture.hasAlpha = true;
     }
 
     // === Arbustos ===
@@ -127,7 +144,8 @@ function createCity() {
         let bush = BABYLON.MeshBuilder.CreateSphere("bush"+i, {diameter:0.5 + Math.random()*0.3}, scene);
         bush.position.set(Math.random()*mapSize-mapSize/2, 0.25, Math.random()*mapSize-mapSize/2);
         bush.material = new BABYLON.StandardMaterial("matBush"+i, scene);
-        bush.material.diffuseColor = new BABYLON.Color3(0.2+Math.random()*0.3,0.6+Math.random()*0.3,0.2+Math.random()*0.3);
+        bush.material.diffuseTexture = new BABYLON.Texture("textures/bush.png", scene);
+        bush.material.diffuseTexture.hasAlpha = true;
     }
 
     // === Vehículos circulando SOLO por calles ===
@@ -135,15 +153,13 @@ function createCity() {
     for (let i=0;i<12;i++) {
         let car = BABYLON.MeshBuilder.CreateBox("car"+i, {width:2, height:1, depth:1}, scene);
         car.material = new BABYLON.StandardMaterial("matCar"+i, scene);
-        car.material.diffuseColor = new BABYLON.Color3(Math.random(), Math.random(), Math.random());
+        car.material.diffuseTexture = new BABYLON.Texture("textures/car_paint.jpg", scene);
 
         if (Math.random()>0.5) {
-            // Carro en calle horizontal (X se mueve)
             let zLane = (Math.floor(Math.random()*(buildingBlocks+1)) * blockSize) - mapSize/2;
             car.position.set(-mapSize/2, 0.5, zLane+1.5*(Math.random()>0.5?1:-1));
             vehicles.push({mesh:car, dir:1, axis:"x"});
         } else {
-            // Carro en calle vertical (Z se mueve)
             let xLane = (Math.floor(Math.random()*(buildingBlocks+1)) * blockSize) - mapSize/2;
             car.position.set(xLane+1.5*(Math.random()>0.5?1:-1), 0.5, -mapSize/2);
             vehicles.push({mesh:car, dir:1, axis:"z"});
@@ -166,6 +182,7 @@ function createCity() {
     });
 }
 createCity();
+
 
 // ======= Ciclo Día/Noche =======
 function setupDayNightCycle(scene) {
