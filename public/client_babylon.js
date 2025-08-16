@@ -8,6 +8,15 @@ let localPlayer = {
     hp: 100,
     canShoot: true,
     mesh: null,
+    weapon: {
+        name: "Pistol",
+        damage: 25,
+        cooldown: 300,
+        canShoot: true,
+        ammo: 12,
+        maxAmmo: 12,
+        mesh: null
+    }
 };
 
 // ======= Crear jugador =======
@@ -17,6 +26,13 @@ localPlayer.mesh.material = new BABYLON.StandardMaterial("matP", scene);
 localPlayer.mesh.material.diffuseColor = new BABYLON.Color3(0.8,0.3,0.6);
 localPlayer.mesh.checkCollisions = true;
 
+// ======= Arma del jugador =======
+localPlayer.weapon.mesh = BABYLON.MeshBuilder.CreateBox("pistol", {width:0.3, height:0.2, depth:1}, scene);
+localPlayer.weapon.mesh.material = new BABYLON.StandardMaterial("matGun", scene);
+localPlayer.weapon.mesh.material.diffuseColor = new BABYLON.Color3(0.1,0.1,0.1);
+localPlayer.weapon.mesh.parent = localPlayer.mesh;
+localPlayer.weapon.mesh.position.set(0.3,1,0.5);
+
 // ======= Cámara estilo GTA =======
 let camera = new BABYLON.ArcRotateCamera("arcCam", -Math.PI/2, Math.PI/3, 6, localPlayer.mesh.position, scene);
 camera.attachControl(canvas, true);
@@ -25,7 +41,7 @@ camera.upperRadiusLimit = 12;
 camera.wheelDeltaPercentage = 0.01;
 camera.checkCollisions = true;
 camera.collisionRadius = new BABYLON.Vector3(0.5,0.5,0.5);
-camera.upperBetaLimit = Math.PI/2.2; // evitar mirar debajo del suelo
+camera.upperBetaLimit = Math.PI/2.2;
 camera.lowerBetaLimit = 0.1;
 
 // ======= Luz =======
@@ -36,7 +52,6 @@ light.intensity = 0.9;
 let ground = BABYLON.MeshBuilder.CreateGround("ground", {width:200, height:200}, scene);
 ground.checkCollisions = true;
 
-// ======= Mapa low-poly: bosque + ciudad =======
 // ======= Mapa pintoresco =======
 function createMap() {
     // Árboles variados
@@ -91,10 +106,10 @@ function createMap() {
         lake.material = new BABYLON.StandardMaterial("matLake"+i, scene);
         lake.material.diffuseColor = new BABYLON.Color3(0,0.5,0.7);
         lake.material.alpha = 0.7;
-        lake.checkCollisions = false; // los lagos no bloquean al jugador
+        lake.checkCollisions = false;
     }
 
-    // Caminos simples (rectángulos)
+    // Caminos simples
     for(let i=0;i<5;i++){
         let road = BABYLON.MeshBuilder.CreateBox("road"+i, {width: Math.random()*20+10, height:0.05, depth:4}, scene);
         road.position.set(Math.random()*160-80, 0.025, Math.random()*160-80);
@@ -104,7 +119,6 @@ function createMap() {
     }
 }
 createMap();
-
 
 // ======= Controles teclado =======
 let inputMap = {};
@@ -118,16 +132,24 @@ scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(
     e => inputMap[e.sourceEvent.key.toLowerCase()] = false
 ));
 
+// Recarga tecla R
+scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(
+    BABYLON.ActionManager.OnKeyDownTrigger,
+    e => {
+        if(e.sourceEvent.key.toLowerCase() === "r"){
+            localPlayer.weapon.ammo = localPlayer.weapon.maxAmmo;
+            console.log("Recargando...");
+        }
+    }
+));
+
 // ======= Movimiento relativa a cámara =======
 scene.onBeforeRenderObservable.add(()=>{
     let dir = new BABYLON.Vector3.Zero();
-
-    // forward/right según cámara horizontal (proyección XZ)
     let camForward = camera.getTarget().subtract(camera.position);
     camForward.y = 0;
     camForward.normalize();
-
-    let camRight = new BABYLON.Vector3(-camForward.z, 0, camForward.x); // perpendicular en XZ
+    let camRight = new BABYLON.Vector3(-camForward.z, 0, camForward.x);
 
     if(inputMap["w"]) dir.addInPlace(camForward);
     if(inputMap["s"]) dir.subtractInPlace(camForward);
@@ -137,8 +159,6 @@ scene.onBeforeRenderObservable.add(()=>{
     if(dir.lengthSquared() > 0){
         dir.normalize();
         localPlayer.mesh.moveWithCollisions(dir.scale(0.3));
-
-        // girar jugador hacia dirección de movimiento
         let targetRotation = Math.atan2(dir.x, dir.z);
         localPlayer.mesh.rotation.y += (targetRotation - localPlayer.mesh.rotation.y) * 0.2;
     }
@@ -146,17 +166,36 @@ scene.onBeforeRenderObservable.add(()=>{
 
 // ======= Disparo =======
 canvas.addEventListener('pointerdown', ()=>{
-    if(!localPlayer.canShoot) return;
-    localPlayer.canShoot = false;
-    setTimeout(()=> localPlayer.canShoot = true, 200);
+    if(!localPlayer.weapon.canShoot || localPlayer.weapon.ammo <= 0) return;
 
-    let origin = localPlayer.mesh.position.clone();
+    localPlayer.weapon.canShoot = false;
+    localPlayer.weapon.ammo--;
+    setTimeout(()=> localPlayer.weapon.canShoot = true, localPlayer.weapon.cooldown);
+
+    let origin = localPlayer.mesh.position.add(new BABYLON.Vector3(0,1.2,0));
     let forward = camera.getTarget().subtract(camera.position).normalize();
+
+    // Raycast
     let ray = new BABYLON.Ray(origin, forward, 50);
-    let hit = scene.pickWithRay(ray, mesh=>mesh!=localPlayer.mesh);
+    let hit = scene.pickWithRay(ray, mesh=>mesh!=localPlayer.mesh && mesh!=localPlayer.weapon.mesh);
     if(hit.hit){
-        console.log("Disparo impactó en:", hit.pickedMesh.name);
+        console.log(`Disparo impactó en: ${hit.pickedMesh.name}`);
     }
+
+    // Bala visual
+    let bullet = BABYLON.MeshBuilder.CreateSphere("bullet", {diameter:0.1}, scene);
+    bullet.position = origin.clone();
+    bullet.material = new BABYLON.StandardMaterial("matBullet", scene);
+    bullet.material.diffuseColor = new BABYLON.Color3(1,1,0);
+
+    let bulletSpeed = 1;
+    let moveBullet = scene.onBeforeRenderObservable.add(()=>{
+        bullet.position.addInPlace(forward.scale(bulletSpeed));
+        if(bullet.position.subtract(origin).length() > 50){
+            bullet.dispose();
+            scene.onBeforeRenderObservable.remove(moveBullet);
+        }
+    });
 });
 
 // ======= Loop =======
