@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MVP Shooter 3D Low-Poly</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Three.js + Controles (desde CDN) -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/controls/PointerLockControls.js"></script>
+  <!-- Socket.IO cliente -->
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <div id="ui">
+    <button id="startBtn">Click para jugar</button>
+    <div id="hud" class="hidden">
+      <span id="hp">HP: 100</span>
+      <span id="tip">WASD para moverte · Click para disparar · Shift corre</span>
+    </div>
+  </div>
+  <canvas id="c"></canvas>
+  <script src="client.js"></script>
+</body>
+</html>
