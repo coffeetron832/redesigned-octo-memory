@@ -167,6 +167,53 @@ function createCity() {
 }
 createCity();
 
+// ======= Ciclo Día/Noche =======
+function setupDayNightCycle(scene) {
+    // Luz del sol (direccional)
+    const sun = new BABYLON.DirectionalLight("sun", new BABYLON.Vector3(-1, -2, -1), scene);
+    sun.position = new BABYLON.Vector3(0, 100, 0);
+    sun.intensity = 1;
+
+    // Luz ambiental
+    const ambient = new BABYLON.HemisphericLight("ambient", new BABYLON.Vector3(0, 1, 0), scene);
+    ambient.intensity = 0.4;
+
+    // Skybox dinámico
+    const skybox = BABYLON.MeshBuilder.CreateBox("skyBox", { size: 1000 }, scene);
+    const skyboxMaterial = new BABYLON.StandardMaterial("skyBoxMat", scene);
+    skyboxMaterial.backFaceCulling = false;
+    skyboxMaterial.disableLighting = true;
+    skybox.material = skyboxMaterial;
+
+    let time = 0; // 0 = amanecer, 0.5 = noche, 1 = amanecer otra vez
+
+    scene.onBeforeRenderObservable.add(() => {
+        time += engine.getDeltaTime() * 0.00002; // velocidad del ciclo
+        if (time > 1) time = 0;
+
+        // Rotación del sol
+        let angle = time * 2 * Math.PI;
+        sun.direction = new BABYLON.Vector3(Math.sin(angle), -Math.cos(angle), Math.sin(angle));
+
+        // Intensidad de la luz solar y ambiental
+        let dayFactor = Math.max(0, Math.cos(angle));
+        sun.intensity = 0.8 * dayFactor;
+        ambient.intensity = 0.2 + 0.6 * dayFactor;
+
+        // Color del cielo
+        if (dayFactor > 0.2) {
+            // Día
+            skyboxMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.7, 1.0);
+            skyboxMaterial.emissiveColor = new BABYLON.Color3(0.4, 0.7, 1.0);
+        } else {
+            // Noche
+            skyboxMaterial.diffuseColor = new BABYLON.Color3(0.02, 0.02, 0.05);
+            skyboxMaterial.emissiveColor = new BABYLON.Color3(0.02, 0.02, 0.05);
+        }
+    });
+}
+
+setupDayNightCycle(scene);
 
 
 
