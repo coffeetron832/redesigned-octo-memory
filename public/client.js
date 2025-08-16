@@ -14,7 +14,6 @@ camera.position.y = 2;
 // Render
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
 
 // Luz
 const light = new THREE.DirectionalLight(0xffffff, 1);
