@@ -42,15 +42,19 @@ const HIP_RADIUS = 6;   // radio cámara por defecto
 const AIM_RADIUS = 3;   // radio cuando apuntas
 let desiredCameraRadius = HIP_RADIUS;
 
+// ======= Ajustes de altura del jugador (previene levitar / caer) =======
+const PLAYER_BASE_Y = 1.0; // altura estándar del centro del capsule
+const MIN_PLAYER_Y = 0.5;  // límite inferior seguridad
+const MAX_PLAYER_Y = 3.0;  // límite superior seguridad (por si algo empuja hacia arriba)
+
 // ======= Crear jugador (local mesh) =======
 localPlayer.mesh = BABYLON.MeshBuilder.CreateCapsule("player_local", {radius:0.5, height:1.5}, scene);
-localPlayer.mesh.position.set(0, 1, 0);
+localPlayer.mesh.position.set(0, PLAYER_BASE_Y, 0);
 localPlayer.mesh.material = new BABYLON.StandardMaterial("matP", scene);
 localPlayer.mesh.material.diffuseColor = new BABYLON.Color3(0.8,0.3,0.6);
 localPlayer.mesh.checkCollisions = true;
 
 // ======= Arma del jugador (mesh independiente, no parentada) =======
-// Creamos el mesh del arma como cubo simple; puedes sustituir por un glb más adelante.
 localPlayer.weapon.mesh = BABYLON.MeshBuilder.CreateBox("pistol_local", {width:0.3, height:0.15, depth:0.9}, scene);
 localPlayer.weapon.mesh.material = new BABYLON.StandardMaterial("matGun_local", scene);
 localPlayer.weapon.mesh.material.diffuseColor = new BABYLON.Color3(0.12,0.12,0.12);
@@ -67,8 +71,6 @@ camera.collisionRadius = new BABYLON.Vector3(0.5,0.5,0.5);
 camera.upperBetaLimit = Math.PI/2.2;
 camera.lowerBetaLimit = 0.1;
 camera.useBouncingBehavior = false;
-
-// Guardamos radio por defecto
 camera.radius = HIP_RADIUS;
 
 // ======= Luz =======
@@ -104,6 +106,7 @@ function createCity() {
         roadMatX.diffuseTexture = new BABYLON.Texture("textures/asphalt.jpg", scene);
         roadMatX.specularColor = new BABYLON.Color3(0,0,0);
         roadX.material = roadMatX;
+        roadX.checkCollisions = true;
         roads.push(roadX);
 
         // Vertical (Z)
@@ -113,6 +116,7 @@ function createCity() {
         roadMatZ.diffuseTexture = new BABYLON.Texture("textures/asphalt.jpg", scene);
         roadMatZ.specularColor = new BABYLON.Color3(0,0,0);
         roadZ.material = roadMatZ;
+        roadZ.checkCollisions = true;
         roads.push(roadZ);
     }
 
@@ -173,6 +177,7 @@ function createCity() {
         bush.material = new BABYLON.StandardMaterial("matBush"+i, scene);
         bush.material.diffuseTexture = new BABYLON.Texture("textures/bush.png", scene);
         bush.material.diffuseTexture.hasAlpha = true;
+        bush.checkCollisions = true;
     }
 
     // === Vehículos circulando SOLO por calles ===
@@ -181,6 +186,7 @@ function createCity() {
         let car = BABYLON.MeshBuilder.CreateBox("car"+i, {width:2, height:1, depth:1}, scene);
         car.material = new BABYLON.StandardMaterial("matCar"+i, scene);
         car.material.diffuseTexture = new BABYLON.Texture("textures/car_paint.jpg", scene);
+        car.checkCollisions = true;
 
         if (Math.random()>0.5) {
             let zLane = (Math.floor(Math.random()*(buildingBlocks+1)) * blockSize) - mapSize/2;
@@ -274,12 +280,17 @@ scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(
 
 // ======= Pointer handling: actualizar aimTarget =======
 function updateAimFromScreenCoords(screenX, screenY){
-    // intenta hacer pick en la escena con la cámara actual
-    const pick = scene.pick(screenX, screenY, (mesh) => { return mesh !== localPlayer.weapon.mesh; }, false, camera);
+    // intenta hacer pick en la escena con la cámara actual (evitamos picks sobre arma y jugador para no apuntar al propio mesh)
+    const pick = scene.pick(screenX, screenY, (mesh) => {
+        if(!mesh) return false;
+        if(mesh === localPlayer.weapon.mesh) return false;
+        if(mesh === localPlayer.mesh) return false;
+        return true;
+    }, false, camera);
+
     if(pick && pick.hit && pick.pickedPoint){
         aimTarget.copyFrom(pick.pickedPoint);
     } else {
-        // si no hay pick, proyectamos un punto lejos en la dirección de la cámara
         const ray = scene.createPickingRay(screenX, screenY, BABYLON.Matrix.Identity(), camera);
         aimTarget.copyFrom(camera.position.add(ray.direction.scale(50)));
     }
@@ -287,9 +298,7 @@ function updateAimFromScreenCoords(screenX, screenY){
 
 // escuchamos movimiento del puntero cuando no está locked
 canvas.addEventListener('pointermove', (ev) => {
-    // solo actualizar target si el mouse no está bloqueado (cuando está bloqueado usamos centro)
     if(document.pointerLockElement !== canvas){
-        // screen coords relativos al canvas
         const rect = canvas.getBoundingClientRect();
         const x = ev.clientX - rect.left;
         const y = ev.clientY - rect.top;
@@ -312,13 +321,6 @@ canvas.addEventListener('pointerdown', (ev)=>{
     if(ev.button === 2){
         isAiming = true;
         desiredCameraRadius = AIM_RADIUS;
-        // cuando entras a aim, lock al centro si quieres (opcional): requestPointerLock();
-    }
-
-    // botón izquierdo dispara (implementado más abajo también para compatibilidad)
-    if(ev.button === 0){
-        // disparo principal
-        // (el bloque de disparo ya existe más abajo; mantenemos compatibilidad)
     }
 });
 
@@ -331,6 +333,10 @@ canvas.addEventListener('pointerup', (ev)=>{
 
 // ======= Movimiento, arma y sincronización =======
 scene.onBeforeRenderObservable.add(()=>{
+    // Mantener cámara siempre apuntando al jugador (evita target drift)
+    camera.setTarget(localPlayer.mesh.position);
+
+    // Movimiento en XZ
     let dir = new BABYLON.Vector3.Zero();
     let camForward = camera.getTarget().subtract(camera.position);
     camForward.y = 0;
@@ -359,37 +365,51 @@ scene.onBeforeRenderObservable.add(()=>{
 
     // ======= Posicionar y orientar arma hacia aimTarget con blending hip->aim =======
     if(localPlayer.weapon.mesh){
-        // cálculo de posición "hip" (cadera)
+        // posición hip (cadera)
         const forwardPlayer = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y), 0, Math.cos(localPlayer.mesh.rotation.y));
         const rightPlayer = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y + Math.PI/2), 0, Math.cos(localPlayer.mesh.rotation.y + Math.PI/2));
         const hipOffset = forwardPlayer.scale(0.5).add(rightPlayer.scale(0.15)).add(new BABYLON.Vector3(0, 1.05, 0));
         const hipWorldPos = localPlayer.mesh.position.add(hipOffset);
 
-        // cálculo de posición "aim" (cerca de la cámara / centro de pantalla)
+        // posición aim (cerca de la cámara)
         const camForwardWorld = camera.getTarget().subtract(camera.position).normalize();
-        // un punto cercano delante de la cámara; puedes ajustar la distancia (1.0) para acercar/alejar
-        const aimWorldPos = camera.position.add(camForwardWorld.scale(1.0)).add(new BABYLON.Vector3(0.15, -0.15, 0)); // ligera corrección a la derecha/up
+        const aimWorldPos = camera.position.add(camForwardWorld.scale(1.0)).add(new BABYLON.Vector3(0.15, -0.15, 0));
 
-        // actualizar blend (0..1)
+        // blend
         aimBlend += ( (isAiming ? 1 : 0) - aimBlend ) * AIM_BLEND_SPEED;
 
-        // interpolar posición y rotación
+        // aplicar interpolation
         const lerpedPos = BABYLON.Vector3.Lerp(hipWorldPos, aimWorldPos, aimBlend);
         localPlayer.weapon.mesh.position.copyFrom(lerpedPos);
 
-        // si apuntando fuertemente (aimBlend > 0.1) orienta hacia aimTarget; si no, orienta según jugador
         if(aimBlend > 0.05){
             localPlayer.weapon.mesh.lookAt(aimTarget);
         } else {
-            // orientar aproximadamente en la dirección del jugador
             const lookAtPoint = localPlayer.mesh.position.add(forwardPlayer.scale(5)).add(new BABYLON.Vector3(0,1,0));
             localPlayer.weapon.mesh.lookAt(lookAtPoint);
         }
 
-        // Opcional: ligeramente reducir la escala del arma al apuntar (sensación de acercamiento)
         const targetScale = 1 - 0.12 * aimBlend;
         localPlayer.weapon.mesh.scaling.set(targetScale, targetScale, targetScale);
     }
+
+    // ======= Corregir altura del jugador (previene levitar / caer) =======
+    // Opción A (simple): forzar a altura base
+    localPlayer.mesh.position.y = Math.max(MIN_PLAYER_Y, Math.min(MAX_PLAYER_Y, PLAYER_BASE_Y));
+
+    // Opción B (mejor si tu terreno tiene elevaciones): descomenta y usa raycast hacia abajo
+    /*
+    const downOrigin = new BABYLON.Vector3(localPlayer.mesh.position.x, 50, localPlayer.mesh.position.z);
+    const downRay = new BABYLON.Ray(downOrigin, BABYLON.Axis.Y.scale(-1), 100);
+    const pick = scene.pickWithRay(downRay, (m)=> m === ground /* || your other terrain meshes */ /*);
+    if(pick && pick.hit && pick.pickedPoint){
+        // ajustar la Y del jugador para "apoyarlo" en el terreno
+        localPlayer.mesh.position.y = pick.pickedPoint.y + PLAYER_BASE_Y - 0.5; // ajustar offset según tu capsule
+    } else {
+        // fallback
+        localPlayer.mesh.position.y = PLAYER_BASE_Y;
+    }
+    */
 
     // Enviar posición al servidor (si estamos conectados)
     if(netSocket && localPlayer.id && currentRoom){
@@ -453,7 +473,7 @@ canvas.addEventListener('pointerdown', (ev)=>{
 function spawnRemote(id, state){
     if(remotePlayers[id]) return;
     const p = BABYLON.MeshBuilder.CreateCapsule("remote_"+id, {radius:0.5, height:1.5}, scene);
-    p.position.set(state.x || 0, state.y || 1, state.z || 0);
+    p.position.set(state.x || 0, state.y || PLAYER_BASE_Y, state.z || 0);
     let mat = new BABYLON.StandardMaterial("matR"+id, scene);
     mat.diffuseColor = new BABYLON.Color3(Math.random(), Math.random(), Math.random());
     p.material = mat;
@@ -542,7 +562,7 @@ function startGame(socketParam, roomParam, nameParam){
         let o;
         if(Array.isArray(origin)) o = new BABYLON.Vector3(origin[0], origin[1], origin[2]);
         else if(origin && origin.x !== undefined) o = origin;
-        else o = (remotePlayers[id] ? remotePlayers[id].position.clone() : new BABYLON.Vector3(0,1,0));
+        else o = (remotePlayers[id] ? remotePlayers[id].position.clone() : new BABYLON.Vector3(0,PLAYER_BASE_Y,0));
 
         let f;
         if(Array.isArray(forward)) f = new BABYLON.Vector3(forward[0], forward[1], forward[2]);
