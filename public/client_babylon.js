@@ -1,11 +1,18 @@
+// public/client_babylon.js
 // ======= Variables globales =======
 let canvas = document.getElementById('renderCanvas');
 let engine = new BABYLON.Engine(canvas, true);
 let scene = new BABYLON.Scene(engine);
 
+// ======= Net (will be set by startGame) =======
+let netSocket = null;
+let currentRoom = null;
+let currentName = null;
+
 // ======= Jugador local =======
 let localPlayer = {
     id: null,
+    name: null,
     room: null,
     hp: 100,
     canShoot: true,
@@ -21,24 +28,19 @@ let localPlayer = {
     }
 };
 
-// ======= Socket.IO =======
-const socket = io();
+// ======= Remote players store =======
+let remotePlayers = {}; // id -> mesh
 
-// Preguntar sala al jugador
-let roomName = prompt("Ingresa nombre de la sala:", "Sala1");
-if (!roomName) roomName = "Sala1";
-socket.emit("joinRoom", { room: roomName });
-
-// ======= Crear jugador =======
-localPlayer.mesh = BABYLON.MeshBuilder.CreateCapsule("player", {radius:0.5, height:1.5}, scene);
+// ======= Crear jugador (local mesh) =======
+localPlayer.mesh = BABYLON.MeshBuilder.CreateCapsule("player_local", {radius:0.5, height:1.5}, scene);
 localPlayer.mesh.position.set(0, 1, 0);
 localPlayer.mesh.material = new BABYLON.StandardMaterial("matP", scene);
 localPlayer.mesh.material.diffuseColor = new BABYLON.Color3(0.8,0.3,0.6);
 localPlayer.mesh.checkCollisions = true;
 
-// ======= Arma del jugador =======
-localPlayer.weapon.mesh = BABYLON.MeshBuilder.CreateBox("pistol", {width:0.3, height:0.2, depth:1}, scene);
-localPlayer.weapon.mesh.material = new BABYLON.StandardMaterial("matGun", scene);
+// ======= Arma del jugador (attach to local mesh) =======
+localPlayer.weapon.mesh = BABYLON.MeshBuilder.CreateBox("pistol_local", {width:0.3, height:0.2, depth:1}, scene);
+localPlayer.weapon.mesh.material = new BABYLON.StandardMaterial("matGun_local", scene);
 localPlayer.weapon.mesh.material.diffuseColor = new BABYLON.Color3(0.1,0.1,0.1);
 localPlayer.weapon.mesh.parent = localPlayer.mesh;
 localPlayer.weapon.mesh.position.set(0.3,1,0.5);
@@ -58,7 +60,7 @@ camera.lowerBetaLimit = 0.1;
 let light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0,1,0), scene);
 light.intensity = 0.9;
 
-// ======= Piso =======
+// ======= Piso con textura (espera que pongas textures/grass.jpg en /public/textures) =======
 let groundMat = new BABYLON.StandardMaterial("groundMat", scene);
 groundMat.diffuseTexture = new BABYLON.Texture("textures/grass.jpg", scene);
 groundMat.specularColor = new BABYLON.Color3(0,0,0);
@@ -67,7 +69,7 @@ let ground = BABYLON.MeshBuilder.CreateGround("ground", {width:200, height:200},
 ground.material = groundMat;
 ground.checkCollisions = true;
 
-// ======= Mapa  =======
+// ======= Mapa (texturas asumidas en /public/textures) =======
 function createCity() {
     const mapSize = 120; 
     const buildingBlocks = 6;
@@ -193,53 +195,43 @@ function createCity() {
 }
 createCity();
 
-
 // ======= Ciclo Día/Noche =======
 function setupDayNightCycle(scene) {
-    // Luz del sol (direccional)
     const sun = new BABYLON.DirectionalLight("sun", new BABYLON.Vector3(-1, -2, -1), scene);
     sun.position = new BABYLON.Vector3(0, 100, 0);
     sun.intensity = 1;
 
-    // Luz ambiental
     const ambient = new BABYLON.HemisphericLight("ambient", new BABYLON.Vector3(0, 1, 0), scene);
     ambient.intensity = 0.4;
 
-    // Skybox dinámico
     const skybox = BABYLON.MeshBuilder.CreateBox("skyBox", { size: 1000 }, scene);
     const skyboxMaterial = new BABYLON.StandardMaterial("skyBoxMat", scene);
     skyboxMaterial.backFaceCulling = false;
     skyboxMaterial.disableLighting = true;
     skybox.material = skyboxMaterial;
 
-    let time = 0; // 0 = amanecer, 0.5 = noche, 1 = amanecer otra vez
+    let time = 0;
 
     scene.onBeforeRenderObservable.add(() => {
-        time += engine.getDeltaTime() * 0.00002; // velocidad del ciclo
+        time += engine.getDeltaTime() * 0.00002;
         if (time > 1) time = 0;
 
-        // Rotación del sol
         let angle = time * 2 * Math.PI;
         sun.direction = new BABYLON.Vector3(Math.sin(angle), -Math.cos(angle), Math.sin(angle));
 
-        // Intensidad de la luz solar y ambiental
         let dayFactor = Math.max(0, Math.cos(angle));
         sun.intensity = 0.8 * dayFactor;
         ambient.intensity = 0.2 + 0.6 * dayFactor;
 
-        // Color del cielo
         if (dayFactor > 0.2) {
-            // Día
             skyboxMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.7, 1.0);
             skyboxMaterial.emissiveColor = new BABYLON.Color3(0.4, 0.7, 1.0);
         } else {
-            // Noche
             skyboxMaterial.diffuseColor = new BABYLON.Color3(0.02, 0.02, 0.05);
             skyboxMaterial.emissiveColor = new BABYLON.Color3(0.02, 0.02, 0.05);
         }
     });
 }
-
 setupDayNightCycle(scene);
 
 // ======= Controles teclado =======
@@ -285,11 +277,11 @@ scene.onBeforeRenderObservable.add(()=>{
         localPlayer.mesh.rotation.y += (targetRotation - localPlayer.mesh.rotation.y) * 0.2;
     }
 
-    // Enviar posición al servidor
-    if(localPlayer.id){
-        socket.emit("updatePos", {
+    // Enviar posición al servidor (si estamos conectados)
+    if(netSocket && localPlayer.id && currentRoom){
+        netSocket.emit("updatePos", {
             id: localPlayer.id,
-            room: roomName,
+            room: currentRoom,
             x: localPlayer.mesh.position.x,
             y: localPlayer.mesh.position.y,
             z: localPlayer.mesh.position.z,
@@ -301,6 +293,7 @@ scene.onBeforeRenderObservable.add(()=>{
 // ======= Disparo =======
 canvas.addEventListener('pointerdown', ()=>{
     if(!localPlayer.weapon.canShoot || localPlayer.weapon.ammo <= 0) return;
+    if(!currentRoom || !netSocket) return;
 
     localPlayer.weapon.canShoot = false;
     localPlayer.weapon.ammo--;
@@ -309,7 +302,7 @@ canvas.addEventListener('pointerdown', ()=>{
     let origin = localPlayer.mesh.position.add(new BABYLON.Vector3(0,1.2,0));
     let forward = camera.getTarget().subtract(camera.position).normalize();
 
-    // Raycast
+    // Raycast local
     let ray = new BABYLON.Ray(origin, forward, 50);
     let hit = scene.pickWithRay(ray, mesh=>mesh!=localPlayer.mesh && mesh!=localPlayer.weapon.mesh);
     if(hit.hit){
@@ -317,9 +310,9 @@ canvas.addEventListener('pointerdown', ()=>{
     }
 
     // Enviar disparo al servidor
-    socket.emit("shoot", {id: localPlayer.id, room: roomName, origin, forward});
+    netSocket.emit("shoot", { id: localPlayer.id, room: currentRoom, origin: origin.asArray ? origin.asArray() : [origin.x, origin.y, origin.z], forward: [forward.x, forward.y, forward.z] });
 
-    // Bala visual
+    // Bala visual local
     let bullet = BABYLON.MeshBuilder.CreateSphere("bullet", {diameter:0.1}, scene);
     bullet.position = origin.clone();
     bullet.material = new BABYLON.StandardMaterial("matBullet", scene);
@@ -335,48 +328,140 @@ canvas.addEventListener('pointerdown', ()=>{
     });
 });
 
-// ======= Otros jugadores =======
-let remotePlayers = {};
-
-socket.on("init", data=>{
-    localPlayer.id = data.id;
-    console.log("Conectado como:", localPlayer.id, "en sala:", roomName);
-});
-
-socket.on("spawn", data=>{
-    if(remotePlayers[data.id]) return;
-    let p = BABYLON.MeshBuilder.CreateCapsule("remote"+data.id, {radius:0.5, height:1.5}, scene);
-    p.position.set(data.x, data.y, data.z);
-    let mat = new BABYLON.StandardMaterial("matR"+data.id, scene);
+// ======= Network helpers: spawn / despawn =======
+function spawnRemote(id, state){
+    if(remotePlayers[id]) return;
+    const p = BABYLON.MeshBuilder.CreateCapsule("remote_"+id, {radius:0.5, height:1.5}, scene);
+    p.position.set(state.x || 0, state.y || 1, state.z || 0);
+    let mat = new BABYLON.StandardMaterial("matR"+id, scene);
     mat.diffuseColor = new BABYLON.Color3(Math.random(), Math.random(), Math.random());
     p.material = mat;
-    remotePlayers[data.id] = p;
-});
+    remotePlayers[id] = p;
+}
 
-socket.on("despawn", id=>{
+function despawnRemote(id){
     if(remotePlayers[id]){
         remotePlayers[id].dispose();
         delete remotePlayers[id];
     }
-});
+}
 
-socket.on("updatePos", data=>{
-    let p = remotePlayers[data.id];
-    if(p){
-        p.position.set(data.x, data.y, data.z);
-        p.rotation.y = data.rot;
+// ======= startGame: call from index.html with socket and room info =======
+function startGame(socketParam, roomParam, nameParam){
+    if(!socketParam){
+        console.error("startGame: socketParam missing");
+        return;
     }
-});
+    netSocket = socketParam;
+    currentRoom = roomParam;
+    currentName = nameParam || ("player_" + Math.floor(Math.random()*1000));
+    localPlayer.name = currentName;
+    localPlayer.room = currentRoom;
 
-// ======= Loop =======
+    // If server-side join wasn't sent, send it now
+    try { netSocket.emit && netSocket.emit("joinRoom", { room: currentRoom, name: currentName }); } catch(e){}
+
+    // Listeners (cover a few common server event names)
+    netSocket.on("init", data=>{
+        localPlayer.id = data.id || netSocket.id || data.socketId;
+        console.log("INIT from server. my id:", localPlayer.id);
+    });
+
+    // If server sends a full list keyed by id
+    netSocket.on("currentPlayers", (list)=>{
+        // spawn / sync
+        for(const [id, state] of Object.entries(list)){
+            if(id === localPlayer.id) continue;
+            spawnRemote(id, state);
+        }
+    });
+
+    netSocket.on("playerJoined", ({id, state})=>{
+        if(id === localPlayer.id) return;
+        spawnRemote(id, state);
+    });
+
+    netSocket.on("playerMoved", ({id, state})=>{
+        if(id === localPlayer.id) return;
+        if(remotePlayers[id]){
+            remotePlayers[id].position.set(state.x, state.y, state.z);
+            if(state.rot !== undefined) remotePlayers[id].rotation.y = state.rot;
+        } else {
+            spawnRemote(id, state);
+        }
+    });
+
+    netSocket.on("playerLeft", ({id})=>{
+        despawnRemote(id);
+    });
+
+    // Generic updatePlayers (server might send full snapshot)
+    netSocket.on("updatePlayers", (playersObj)=>{
+        // Ensure all present, spawn missing, remove extra
+        const serverIds = new Set(Object.keys(playersObj || {}));
+        // spawn/update
+        for(const id of serverIds){
+            if(id === localPlayer.id) continue;
+            const state = playersObj[id];
+            if(!remotePlayers[id]) spawnRemote(id, state);
+            else {
+                remotePlayers[id].position.set(state.x, state.y, state.z);
+                if(state.rot !== undefined) remotePlayers[id].rotation.y = state.rot;
+            }
+        }
+        // remove locals not on server
+        for(const id in remotePlayers){
+            if(!serverIds.has(id)) despawnRemote(id);
+        }
+    });
+
+    // Shoot event from server
+    netSocket.on("playerShoot", ({ id, origin, forward })=>{
+        // origin may be array or object
+        let o;
+        if(Array.isArray(origin)) o = new BABYLON.Vector3(origin[0], origin[1], origin[2]);
+        else if(origin && origin.x !== undefined) o = origin;
+        else o = (remotePlayers[id] ? remotePlayers[id].position.clone() : new BABYLON.Vector3(0,1,0));
+
+        let f;
+        if(Array.isArray(forward)) f = new BABYLON.Vector3(forward[0], forward[1], forward[2]);
+        else if(forward && forward.x !== undefined) f = forward;
+        else f = new BABYLON.Vector3(0,0,1);
+
+        // Visual bullet
+        const bullet = BABYLON.MeshBuilder.CreateSphere("rb_"+Date.now(), {diameter:0.1}, scene);
+        bullet.position = o.clone();
+        bullet.material = new BABYLON.StandardMaterial("rbMat", scene);
+        bullet.material.diffuseColor = new BABYLON.Color3(1,0.3,0.1);
+        let spd = 1;
+        let mover = scene.onBeforeRenderObservable.add(()=>{
+            bullet.position.addInPlace(f.scale(spd));
+            if(bullet.position.subtract(o).length() > 50){
+                bullet.dispose();
+                scene.onBeforeRenderObservable.remove(mover);
+            }
+        });
+    });
+
+    console.log("startGame: network handlers attached for room:", currentRoom);
+}
+
+// Expose startGame globally so index.html can call it
+window.startGame = startGame;
+
+// ======= Render loop =======
 engine.runRenderLoop(()=>{ scene.render(); });
 
 // ======= Resize =======
 window.addEventListener('resize', ()=>engine.resize());
 
-// ======= Iniciar =======
-document.getElementById('startBtn').addEventListener('click', ()=>{
-    canvas.requestPointerLock();
-    document.getElementById('startBtn').classList.add('hidden');
-    document.getElementById('hud').classList.remove('hidden');
-});
+// ======= Start button (if present) =======
+const startBtnEl = document.getElementById('startBtn');
+if(startBtnEl){
+    startBtnEl.addEventListener('click', ()=>{
+        if(canvas.requestPointerLock) canvas.requestPointerLock();
+        startBtnEl.classList.add('hidden');
+        const hud = document.getElementById('hud');
+        if(hud) hud.classList.remove('hidden');
+    });
+}
