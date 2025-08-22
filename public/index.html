@@ -1,145 +1,161 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MVP Shooter 3D Low-Poly con Babylon.js</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MVP Shooter 3D Low-Poly</title>
+  <link rel="stylesheet" href="style.css" />
   <style>
-    body, html {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      background: #111;
-      font-family: Arial, sans-serif;
-      color: white;
-      overflow: hidden;
-    }
-    #menu {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(0,0,0,0.85);
-      padding: 20px;
-      border-radius: 10px;
-      text-align: center;
-      z-index: 10;
-    }
-    #menu input {
-      margin: 8px 0;
-      padding: 8px;
-      width: 200px;
-      border: none;
-      border-radius: 5px;
-    }
-    #menu button {
-      margin: 8px 0;
-      padding: 10px 20px;
-      background: #28a745;
-      border: none;
-      color: white;
-      font-size: 16px;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-    #menu button:hover {
-      background: #218838;
-    }
-    #hud {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      z-index: 5;
-    }
-    #crosshair {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 20px;
-      height: 20px;
-      margin-left: -10px;
-      margin-top: -10px;
-      border: 2px solid white;
-      border-radius: 50%;
-      pointer-events: none;
-      z-index: 5;
-    }
-    canvas {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
+    /* Styles reducidos (mantén los tuyos si ya los tienes) */
+    body,html{margin:0;height:100%;background:#111;color:white;font-family:Arial, sans-serif;overflow:hidden}
+    #menu{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.9);padding:18px;border-radius:10px;z-index:10;width:320px}
+    #roomsList{max-height:220px;overflow:auto;margin-top:8px;text-align:left}
+    .roomItem{display:flex;justify-content:space-between;align-items:center;padding:6px;border-bottom:1px solid rgba(255,255,255,0.06)}
+    .roomItem button{padding:6px 10px;border-radius:5px;border:none;background:#007bff;color:white;cursor:pointer}
+    #menu input{width:100%;padding:8px;margin-top:8px;border-radius:5px;border:none}
+    #menu button#joinBtn{width:100%;margin-top:10px;padding:10px;background:#28a745;border:none;border-radius:6px;color:white;cursor:pointer}
+    #refreshRooms{background:#444;border:none;color:#fff;padding:6px 10px;border-radius:5px;cursor:pointer;margin-left:6px}
   </style>
 </head>
 <body>
-  <!-- Menú principal -->
   <div id="menu">
-    <h2>🔥 Shooter 3D Low-Poly</h2>
-    <input type="text" id="playerName" placeholder="Tu nombre">
-    <input type="text" id="roomId" placeholder="ID de sala (ej: sala1)">
-    <button id="joinBtn">Unirse a sala</button>
-    <p style="font-size: 12px; color: #ccc;">Máx 12 jugadores por sala</p>
+    <h3>🔥 Shooter 3D — Menú</h3>
+    <input id="playerName" placeholder="Tu nombre (ej: Juan)" />
+    <div style="display:flex;margin-top:8px;">
+      <input id="roomId" placeholder="ID sala (ej: sala1)" />
+      <button id="refreshRooms" title="Actualizar salas">⟳</button>
+    </div>
+
+    <div style="margin-top:8px;">
+      <button id="joinBtn">Unirse / Crear sala</button>
+    </div>
+
+    <hr style="border-color:rgba(255,255,255,0.06);margin:12px 0" />
+
+    <div><strong>Salas disponibles</strong></div>
+    <div id="roomsList">
+      <!-- Lista de salas se renderiza aquí -->
+      <div style="color:#ccc;font-size:13px;margin-top:6px;">Cargando salas...</div>
+    </div>
+    <p style="font-size:12px;color:#aaa;margin-top:10px;">Máx 12 jugadores por sala</p>
   </div>
 
-  <!-- HUD en juego -->
-  <div id="hud" class="hidden">
+  <div id="hud" class="hidden" style="position:absolute;top:10px;left:10px;z-index:5;">
     <span id="hp">HP: 100</span>
-    <span id="tip">WASD para moverte · Click para disparar · Shift corre</span>
+    <span id="tip" style="margin-left:12px">WASD · Click disparo · Shift correr</span>
   </div>
 
-  <!-- Crosshair -->
-  <div id="crosshair"></div>
+  <div id="crosshair" style="position:absolute;top:50%;left:50%;width:20px;height:20px;margin-left:-10px;margin-top:-10px;border:2px solid white;border-radius:50%;pointer-events:none;z-index:5"></div>
 
-  <!-- Canvas de Babylon -->
-  <canvas id="renderCanvas"></canvas>
+  <canvas id="renderCanvas" style="width:100%;height:100%;display:block"></canvas>
 
   <!-- Socket.IO -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  <!-- Babylon.js CDN -->
+  <!-- Babylon -->
   <script src="https://cdn.babylonjs.com/babylon.js"></script>
   <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
 
-  <!-- Cliente: cargar primero el motor / lógica del juego -->
+  <!-- Cliente (tu lógica gráfica). Asegúrate que client_babylon.js define window.startGame -->
   <script src="client_babylon.js"></script>
 
-  <!-- Luego el script UI que crea socket y arranca el juego -->
+  <!-- UI + networking (crea socket y administra menú) -->
   <script>
-    // Crear socket una sola vez en el HTML y pasarlo al cliente.
+    // Crear socket (una sola vez)
     const socket = io();
 
-    // Manejar fallo de conexión (opcional, útil para depurar 404 / socket.io)
-    socket.on("connect_error", (err) => {
-      console.error("No se pudo conectar al servidor socket.io:", err);
-      alert("Error: no se pudo conectar al servidor (socket.io). Verifica que el servidor esté corriendo.");
-    });
+    // UI elementos
+    const menu = document.getElementById("menu");
+    const roomsListEl = document.getElementById("roomsList");
+    const playerNameEl = document.getElementById("playerName");
+    const roomIdEl = document.getElementById("roomId");
+    const joinBtn = document.getElementById("joinBtn");
+    const refreshBtn = document.getElementById("refreshRooms");
 
-    // UI + unión a sala
-    document.getElementById("joinBtn").addEventListener("click", () => {
-      const playerName = document.getElementById("playerName").value.trim();
-      const roomId = document.getElementById("roomId").value.trim();
-
-      if (!playerName || !roomId) {
-        alert("Ingresa nombre y sala");
+    function renderRooms(list){
+      roomsListEl.innerHTML = "";
+      if(!list || list.length === 0){
+        roomsListEl.innerHTML = '<div style="color:#ccc;font-size:13px;margin-top:6px;">No hay salas. Crea una ingresando un ID o pulsa crear.</div>';
         return;
       }
+      list.forEach(r=>{
+        const row = document.createElement("div");
+        row.className = "roomItem";
+        const left = document.createElement("div");
+        left.style.flex = "1";
+        left.innerHTML = `<strong>${r.id}</strong> <span style="color:#aaa;font-size:12px;margin-left:8px">(${r.count}/12)</span>`;
+        const btn = document.createElement("button");
+        btn.textContent = "Unirse";
+        btn.onclick = () => {
+          // prefijar el input con el id y auto-join
+          roomIdEl.value = r.id;
+          doJoin();
+        };
+        row.appendChild(left);
+        row.appendChild(btn);
+        roomsListEl.appendChild(row);
+      });
+    }
 
-      // Ocultar menú, mostrar HUD
-      document.getElementById("menu").style.display = "none";
+    // pedir lista de salas por socket
+    function requestRooms(){
+      socket.emit("listRooms");
+      // also fallback: /rooms fetch
+      fetch("/rooms").then(r=>r.json()).then(list=>{
+        // merge counts with robuster socket event if both used
+        if(list && Array.isArray(list)) renderRooms(list);
+      }).catch(()=>{ /*ignore*/ });
+    }
+
+    socket.on("connect", ()=> {
+      console.log("Conectado socket:", socket.id);
+      requestRooms();
+    });
+
+    // escucha roomsList por socket
+    socket.on("roomsList", (list)=>{
+      renderRooms(list);
+    });
+
+    // actualizar la lista cuando el servidor anuncia cambios
+    socket.on("updatePlayers", ()=> {
+      requestRooms(); // refresh counts (simple)
+    });
+
+    refreshBtn.addEventListener("click", requestRooms);
+
+    function doJoin(){
+      const name = (playerNameEl.value || ("player_"+Math.floor(Math.random()*1000))).trim();
+      const room = (roomIdEl.value || "").trim();
+      if(!room){
+        alert("Ingresa un ID de sala o elige una disponible.");
+        return;
+      }
+      // ocultar menú, mostrar HUD
+      menu.style.display = "none";
       document.getElementById("hud").classList.remove("hidden");
 
-      // Emitir join (también lo hará startGame por seguridad)
-      socket.emit("joinRoom", { roomId, name: playerName });
+      // emitir join (server también lo hará dentro de startGame si lo deseas)
+      socket.emit("joinRoom", { room, name });
 
-      // startGame fue expuesto globalmente por client_babylon.js
+      // arrancar la lógica del juego (client_babylon.js define window.startGame)
       if (typeof startGame === "function") {
-        startGame(socket, roomId, playerName);
+        startGame(socket, room, name);
       } else {
-        // Protección: startGame no existe (script no cargó correctamente)
-        console.error("startGame no está definido — verifica que client_babylon.js se haya cargado.");
-        alert("Error interno: el juego no pudo arrancar. Revisa la consola.");
+        console.error("startGame no definido en client_babylon.js");
+        alert("Error: el juego no pudo arrancar (startGame no definido). Revisa la consola.");
       }
+    }
+
+    joinBtn.addEventListener("click", doJoin);
+
+    // Si el servidor marca sala llena
+    socket.on("roomFull", (data) => {
+      alert(`La sala ${data && data.roomId ? data.roomId : ''} está llena (12 jugadores). Elige otra.`);
+      requestRooms();
     });
+
+    // refresh on initial load
+    requestRooms();
   </script>
 </body>
 </html>
