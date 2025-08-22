@@ -31,6 +31,9 @@ let localPlayer = {
 // ======= Remote players store =======
 let remotePlayers = {}; // id -> mesh
 
+// ======= Aim target (punto en el mundo hacia donde apunta el ratón) =======
+let aimTarget = new BABYLON.Vector3(0, 1.2, 5); // valor inicial
+
 // ======= Crear jugador (local mesh) =======
 localPlayer.mesh = BABYLON.MeshBuilder.CreateCapsule("player_local", {radius:0.5, height:1.5}, scene);
 localPlayer.mesh.position.set(0, 1, 0);
@@ -38,12 +41,17 @@ localPlayer.mesh.material = new BABYLON.StandardMaterial("matP", scene);
 localPlayer.mesh.material.diffuseColor = new BABYLON.Color3(0.8,0.3,0.6);
 localPlayer.mesh.checkCollisions = true;
 
-// ======= Arma del jugador (attach to local mesh) =======
-localPlayer.weapon.mesh = BABYLON.MeshBuilder.CreateBox("pistol_local", {width:0.3, height:0.2, depth:1}, scene);
+// ======= Arma del jugador (mesh independiente, no parentada) =======
+// Creamos el mesh del arma como cubo simple; puedes sustituir por un glb más adelante.
+localPlayer.weapon.mesh = BABYLON.MeshBuilder.CreateBox("pistol_local", {width:0.3, height:0.15, depth:0.9}, scene);
 localPlayer.weapon.mesh.material = new BABYLON.StandardMaterial("matGun_local", scene);
-localPlayer.weapon.mesh.material.diffuseColor = new BABYLON.Color3(0.1,0.1,0.1);
-localPlayer.weapon.mesh.parent = localPlayer.mesh;
-localPlayer.weapon.mesh.position.set(0.3,1,0.5);
+localPlayer.weapon.mesh.material.diffuseColor = new BABYLON.Color3(0.12,0.12,0.12);
+// No la parentamos: la posicionaremos manualmente cada frame.
+// localPlayer.weapon.mesh.parent = localPlayer.mesh;
+localPlayer.weapon.mesh.isPickable = false; // evitar picks sobre el arma
+
+// Ajuste visual: elevamos el pivote si quieres rotación limpia (opcional)
+// localPlayer.weapon.mesh.bakeCurrentTransformIntoVertices(); // si necesitas fijar transformaciones
 
 // ======= Cámara estilo GTA =======
 let camera = new BABYLON.ArcRotateCamera("arcCam", -Math.PI/2, Math.PI/3, 6, localPlayer.mesh.position, scene);
@@ -257,6 +265,39 @@ scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(
     }
 ));
 
+// ======= Pointer handling: actualizar aimTarget =======
+function updateAimFromScreenCoords(screenX, screenY){
+    // intenta hacer pick en la escena con la cámara actual
+    const pick = scene.pick(screenX, screenY, (mesh) => { return mesh !== localPlayer.weapon.mesh; }, false, camera);
+    if(pick && pick.hit && pick.pickedPoint){
+        aimTarget.copyFrom(pick.pickedPoint);
+    } else {
+        // si no hay pick, proyectamos un punto lejos en la dirección de la cámara
+        // (obtiene el rayo de la cámara desde la pantalla)
+        const ray = scene.createPickingRay(screenX, screenY, BABYLON.Matrix.Identity(), camera);
+        aimTarget.copyFrom(camera.position.add(ray.direction.scale(50)));
+    }
+}
+
+// escuchamos movimiento del puntero cuando no está locked
+canvas.addEventListener('pointermove', (ev) => {
+    // solo actualizar target si el mouse no está bloqueado (cuando está bloqueado usamos centro)
+    if(document.pointerLockElement !== canvas){
+        // screen coords relativos al canvas
+        const rect = canvas.getBoundingClientRect();
+        const x = ev.clientX - rect.left;
+        const y = ev.clientY - rect.top;
+        updateAimFromScreenCoords(x, y);
+    }
+});
+
+// Si el usuario tiene pointer lock, apuntamos al centro de la pantalla
+function updateAimCenter(){
+    const cx = engine.getRenderWidth() / 2;
+    const cy = engine.getRenderHeight() / 2;
+    updateAimFromScreenCoords(cx, cy);
+}
+
 // ======= Movimiento =======
 scene.onBeforeRenderObservable.add(()=>{
     let dir = new BABYLON.Vector3.Zero();
@@ -277,6 +318,28 @@ scene.onBeforeRenderObservable.add(()=>{
         localPlayer.mesh.rotation.y += (targetRotation - localPlayer.mesh.rotation.y) * 0.2;
     }
 
+    // actualizar aimTarget (centro si pointer lock)
+    if(document.pointerLockElement === canvas){
+        updateAimCenter();
+    }
+
+    // ======= Posicionar y orientar arma hacia aimTarget =======
+    if(localPlayer.weapon.mesh){
+        // offset local: delante y ligeramente a la derecha del jugador (ajusta a gusto)
+        const forward = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y), 0, Math.cos(localPlayer.mesh.rotation.y));
+        const right = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y + Math.PI/2), 0, Math.cos(localPlayer.mesh.rotation.y + Math.PI/2));
+        const weaponOffset = forward.scale(0.5).add(right.scale(0.15)).add(new BABYLON.Vector3(0, 1.05, 0));
+        const weaponWorldPos = localPlayer.mesh.position.add(weaponOffset);
+
+        localPlayer.weapon.mesh.position.copyFrom(weaponWorldPos);
+
+        // hacer que el arma mire al aimTarget
+        localPlayer.weapon.mesh.lookAt(aimTarget);
+
+        // si quieres limitar pitch (mirada hacia arriba/abajo), puedes leer la rotación resultante y clampear:
+        // let euler = localPlayer.weapon.mesh.rotation; ... ajustar euler.x
+    }
+
     // Enviar posición al servidor (si estamos conectados)
     if(netSocket && localPlayer.id && currentRoom){
         netSocket.emit("updatePos", {
@@ -291,7 +354,10 @@ scene.onBeforeRenderObservable.add(()=>{
 });
 
 // ======= Disparo =======
-canvas.addEventListener('pointerdown', ()=>{
+canvas.addEventListener('pointerdown', (ev)=>{
+    // solo disparar con botón izquierdo
+    if(ev.button !== 0) return;
+
     if(!localPlayer.weapon.canShoot || localPlayer.weapon.ammo <= 0) return;
     if(!currentRoom || !netSocket) return;
 
@@ -299,28 +365,32 @@ canvas.addEventListener('pointerdown', ()=>{
     localPlayer.weapon.ammo--;
     setTimeout(()=> localPlayer.weapon.canShoot = true, localPlayer.weapon.cooldown);
 
-    let origin = localPlayer.mesh.position.add(new BABYLON.Vector3(0,1.2,0));
-    let forward = camera.getTarget().subtract(camera.position).normalize();
+    // origen desde la boca del arma (aprox)
+    const origin = localPlayer.weapon.mesh.position.add(localPlayer.weapon.mesh.getDirection(BABYLON.Axis.Z).scale(0.5));
+    // forward según orientación del arma (eje Z local)
+    const forwardVec = localPlayer.weapon.mesh.getDirection(BABYLON.Axis.Z).normalize();
 
-    // Raycast local
-    let ray = new BABYLON.Ray(origin, forward, 50);
-    let hit = scene.pickWithRay(ray, mesh=>mesh!=localPlayer.mesh && mesh!=localPlayer.weapon.mesh);
-    if(hit.hit){
+    // Raycast local (opcional - para impacto inmediato)
+    const ray = new BABYLON.Ray(origin, forwardVec, 50);
+    const hit = scene.pickWithRay(ray, (mesh) => mesh !== localPlayer.mesh && mesh !== localPlayer.weapon.mesh);
+    if(hit && hit.hit){
         console.log(`Disparo impactó en: ${hit.pickedMesh.name}`);
     }
 
-    // Enviar disparo al servidor
-    netSocket.emit("shoot", { id: localPlayer.id, room: currentRoom, origin: origin.asArray ? origin.asArray() : [origin.x, origin.y, origin.z], forward: [forward.x, forward.y, forward.z] });
+    // Enviar disparo al servidor (transformamos origin a array)
+    const originArr = [origin.x, origin.y, origin.z];
+    const forwardArr = [forwardVec.x, forwardVec.y, forwardVec.z];
+    netSocket.emit("shoot", { id: localPlayer.id, room: currentRoom, origin: originArr, forward: forwardArr });
 
     // Bala visual local
-    let bullet = BABYLON.MeshBuilder.CreateSphere("bullet", {diameter:0.1}, scene);
+    let bullet = BABYLON.MeshBuilder.CreateSphere("bullet", {diameter:0.08}, scene);
     bullet.position = origin.clone();
     bullet.material = new BABYLON.StandardMaterial("matBullet", scene);
-    bullet.material.diffuseColor = new BABYLON.Color3(1,1,0);
+    bullet.material.diffuseColor = new BABYLON.Color3(1,1,0.2);
 
-    let bulletSpeed = 1;
+    let bulletSpeed = 2.0;
     let moveBullet = scene.onBeforeRenderObservable.add(()=>{
-        bullet.position.addInPlace(forward.scale(bulletSpeed));
+        bullet.position.addInPlace(forwardVec.scale(bulletSpeed));
         if(bullet.position.subtract(origin).length() > 50){
             bullet.dispose();
             scene.onBeforeRenderObservable.remove(moveBullet);
@@ -429,11 +499,11 @@ function startGame(socketParam, roomParam, nameParam){
         else f = new BABYLON.Vector3(0,0,1);
 
         // Visual bullet
-        const bullet = BABYLON.MeshBuilder.CreateSphere("rb_"+Date.now(), {diameter:0.1}, scene);
+        const bullet = BABYLON.MeshBuilder.CreateSphere("rb_"+Date.now(), {diameter:0.08}, scene);
         bullet.position = o.clone();
         bullet.material = new BABYLON.StandardMaterial("rbMat", scene);
         bullet.material.diffuseColor = new BABYLON.Color3(1,0.3,0.1);
-        let spd = 1;
+        let spd = 2;
         let mover = scene.onBeforeRenderObservable.add(()=>{
             bullet.position.addInPlace(f.scale(spd));
             if(bullet.position.subtract(o).length() > 50){
