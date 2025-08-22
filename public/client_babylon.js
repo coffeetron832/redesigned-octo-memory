@@ -1,4 +1,7 @@
-// public/client_babylon.js (ACTUALIZADO: aim con right-click + pointer lock + arma separada)
+public/client_babylon.js:
+
+// public/client_babylon.js
+// ======= Variables globales =======
 let canvas = document.getElementById('renderCanvas');
 let engine = new BABYLON.Engine(canvas, true);
 let scene = new BABYLON.Scene(engine);
@@ -41,25 +44,21 @@ localPlayer.mesh.material.diffuseColor = new BABYLON.Color3(0.8,0.3,0.6);
 localPlayer.mesh.checkCollisions = true;
 
 // ======= Arma del jugador (mesh independiente, no parentada) =======
+// Creamos el mesh del arma como cubo simple; puedes sustituir por un glb más adelante.
 localPlayer.weapon.mesh = BABYLON.MeshBuilder.CreateBox("pistol_local", {width:0.3, height:0.15, depth:0.9}, scene);
 localPlayer.weapon.mesh.material = new BABYLON.StandardMaterial("matGun_local", scene);
 localPlayer.weapon.mesh.material.diffuseColor = new BABYLON.Color3(0.12,0.12,0.12);
-localPlayer.weapon.mesh.isPickable = false;
+// No la parentamos: la posicionaremos manualmente cada frame.
+// localPlayer.weapon.mesh.parent = localPlayer.mesh;
+localPlayer.weapon.mesh.isPickable = false; // evitar picks sobre el arma
 
-// ======= Cámara estilo GTA (ArcRotate) =======
-const NORMAL_RADIUS = 6;
-const AIM_RADIUS = 2.0;
-let desiredRadius = NORMAL_RADIUS;
-let isAiming = false;
+// Ajuste visual: elevamos el pivote si quieres rotación limpia (opcional)
+// localPlayer.weapon.mesh.bakeCurrentTransformIntoVertices(); // si necesitas fijar transformaciones
 
-const AIM_SENS = 1.2;
-const NORMAL_SENS = 1.0;
-const AIM_LERP = 0.18; // suavizado de zoom
-const WEAPON_LERP = 0.22; // suavizado arma
-
-let camera = new BABYLON.ArcRotateCamera("arcCam", -Math.PI/2, Math.PI/3, NORMAL_RADIUS, localPlayer.mesh.position, scene);
+// ======= Cámara estilo GTA =======
+let camera = new BABYLON.ArcRotateCamera("arcCam", -Math.PI/2, Math.PI/3, 6, localPlayer.mesh.position, scene);
 camera.attachControl(canvas, true);
-camera.lowerRadiusLimit = 1.5;
+camera.lowerRadiusLimit = 2;
 camera.upperRadiusLimit = 12;
 camera.wheelDeltaPercentage = 0.01;
 camera.checkCollisions = true;
@@ -71,107 +70,238 @@ camera.lowerBetaLimit = 0.1;
 let light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0,1,0), scene);
 light.intensity = 0.9;
 
-// ======= Piso con textura (pon tus texturas en /public/textures) =======
+// ======= Piso con textura (espera que pongas textures/grass.jpg en /public/textures) =======
 let groundMat = new BABYLON.StandardMaterial("groundMat", scene);
 groundMat.diffuseTexture = new BABYLON.Texture("textures/grass.jpg", scene);
 groundMat.specularColor = new BABYLON.Color3(0,0,0);
+
 let ground = BABYLON.MeshBuilder.CreateGround("ground", {width:200, height:200}, scene);
 ground.material = groundMat;
 ground.checkCollisions = true;
 
-/* ------------------------
-   Aquí puedes mantener tu función createCity() existente
-   (no la pego completa para no duplicar; conserva la tuya)
-   ------------------------ */
-createCity && createCity();
+// ======= Mapa (texturas asumidas en /public/textures) =======
+function createCity() {
+    const mapSize = 120; 
+    const buildingBlocks = 6;
+    const buildingsPerBlock = 6;
+    const treeCount = 40;
+    const bushCount = 20;
 
-// ======= Day/Night (mantén la tuya) =======
-setupDayNightCycle && setupDayNightCycle(scene);
+    const blockSize = mapSize / buildingBlocks;
+    let roads = [];
 
-// ======= Input handling =======
+    // === Calles principales ===
+    for (let i = 0; i <= buildingBlocks; i++) {
+        // Horizontal (X)
+        let roadX = BABYLON.MeshBuilder.CreateBox("roadX"+i, {width: mapSize, height:0.05, depth: 3}, scene);
+        roadX.position.set(0,0.025, (i*blockSize)-mapSize/2);
+        let roadMatX = new BABYLON.StandardMaterial("matRoadX"+i, scene);
+        roadMatX.diffuseTexture = new BABYLON.Texture("textures/asphalt.jpg", scene);
+        roadMatX.specularColor = new BABYLON.Color3(0,0,0);
+        roadX.material = roadMatX;
+        roads.push(roadX);
+
+        // Vertical (Z)
+        let roadZ = BABYLON.MeshBuilder.CreateBox("roadZ"+i, {width: 3, height:0.05, depth: mapSize}, scene);
+        roadZ.position.set((i*blockSize)-mapSize/2,0.025,0);
+        let roadMatZ = new BABYLON.StandardMaterial("matRoadZ"+i, scene);
+        roadMatZ.diffuseTexture = new BABYLON.Texture("textures/asphalt.jpg", scene);
+        roadMatZ.specularColor = new BABYLON.Color3(0,0,0);
+        roadZ.material = roadMatZ;
+        roads.push(roadZ);
+    }
+
+    // === Edificios organizados en bloques ===
+    let wallTextures = [
+        "textures/wall_brick.jpg",
+        "textures/wall_concrete.jpg",
+        "textures/wall_glass.jpg"
+    ];
+
+    for (let bx=0; bx<buildingBlocks; bx++) {
+        for (let bz=0; bz<buildingBlocks; bz++) {
+            for (let i=0; i<buildingsPerBlock; i++) {
+                let w = 2 + Math.random()*2;
+                let d = 2 + Math.random()*2;
+                let h = 4 + Math.random()*6;
+
+                let offsetX = (Math.random()-0.5)*blockSize*0.5;
+                let offsetZ = (Math.random()-0.5)*blockSize*0.5;
+
+                let b = BABYLON.MeshBuilder.CreateBox("bldg"+bx+"_"+bz+"_"+i,
+                    {width:w, height:h, depth:d}, scene);
+                b.position.set(
+                    bx*blockSize - mapSize/2 + blockSize/2 + offsetX,
+                    h/2,
+                    bz*blockSize - mapSize/2 + blockSize/2 + offsetZ
+                );
+                let matB = new BABYLON.StandardMaterial("matB"+i, scene);
+                matB.diffuseTexture = new BABYLON.Texture(wallTextures[Math.floor(Math.random()*wallTextures.length)], scene);
+                matB.specularColor = new BABYLON.Color3(0,0,0);
+                b.material = matB;
+                b.checkCollisions = true;
+            }
+        }
+    }
+
+    // === Parques con árboles ===
+    for (let i=0;i<treeCount;i++) {
+        let x = (Math.floor(Math.random()*buildingBlocks) * blockSize) - mapSize/2 + blockSize/2;
+        let z = (Math.floor(Math.random()*buildingBlocks) * blockSize) - mapSize/2 + blockSize/2;
+
+        let trunk = BABYLON.MeshBuilder.CreateCylinder("trunk"+i, {height:1.5, diameterTop:0.3, diameterBottom:0.3}, scene);
+        trunk.position.set(x+(Math.random()-0.5)*blockSize*0.8,0.75,z+(Math.random()-0.5)*blockSize*0.8);
+        trunk.material = new BABYLON.StandardMaterial("matTrunk"+i, scene);
+        trunk.material.diffuseTexture = new BABYLON.Texture("textures/wood.jpg", scene);
+
+        let leaves = BABYLON.MeshBuilder.CreateSphere("leaves"+i, {diameter:1.5}, scene);
+        leaves.position.set(trunk.position.x, 1.6, trunk.position.z);
+        leaves.material = new BABYLON.StandardMaterial("matLeaves"+i, scene);
+        leaves.material.diffuseTexture = new BABYLON.Texture("textures/leaves.png", scene);
+        leaves.material.diffuseTexture.hasAlpha = true;
+    }
+
+    // === Arbustos ===
+    for (let i=0;i<bushCount;i++) {
+        let bush = BABYLON.MeshBuilder.CreateSphere("bush"+i, {diameter:0.5 + Math.random()*0.3}, scene);
+        bush.position.set(Math.random()*mapSize-mapSize/2, 0.25, Math.random()*mapSize-mapSize/2);
+        bush.material = new BABYLON.StandardMaterial("matBush"+i, scene);
+        bush.material.diffuseTexture = new BABYLON.Texture("textures/bush.png", scene);
+        bush.material.diffuseTexture.hasAlpha = true;
+    }
+
+    // === Vehículos circulando SOLO por calles ===
+    let vehicles = [];
+    for (let i=0;i<12;i++) {
+        let car = BABYLON.MeshBuilder.CreateBox("car"+i, {width:2, height:1, depth:1}, scene);
+        car.material = new BABYLON.StandardMaterial("matCar"+i, scene);
+        car.material.diffuseTexture = new BABYLON.Texture("textures/car_paint.jpg", scene);
+
+        if (Math.random()>0.5) {
+            let zLane = (Math.floor(Math.random()*(buildingBlocks+1)) * blockSize) - mapSize/2;
+            car.position.set(-mapSize/2, 0.5, zLane+1.5*(Math.random()>0.5?1:-1));
+            vehicles.push({mesh:car, dir:1, axis:"x"});
+        } else {
+            let xLane = (Math.floor(Math.random()*(buildingBlocks+1)) * blockSize) - mapSize/2;
+            car.position.set(xLane+1.5*(Math.random()>0.5?1:-1), 0.5, -mapSize/2);
+            vehicles.push({mesh:car, dir:1, axis:"z"});
+        }
+    }
+
+    // === Animar vehículos ===
+    scene.onBeforeRenderObservable.add(()=>{
+        vehicles.forEach(v=>{
+            if (v.axis==="x") {
+                v.mesh.position.x += 0.4 * v.dir;
+                if(v.mesh.position.x > mapSize/2) v.mesh.position.x = -mapSize/2;
+                if(v.mesh.position.x < -mapSize/2) v.mesh.position.x = mapSize/2;
+            } else {
+                v.mesh.position.z += 0.4 * v.dir;
+                if(v.mesh.position.z > mapSize/2) v.mesh.position.z = -mapSize/2;
+                if(v.mesh.position.z < -mapSize/2) v.mesh.position.z = mapSize/2;
+            }
+        });
+    });
+}
+createCity();
+
+// ======= Ciclo Día/Noche =======
+function setupDayNightCycle(scene) {
+    const sun = new BABYLON.DirectionalLight("sun", new BABYLON.Vector3(-1, -2, -1), scene);
+    sun.position = new BABYLON.Vector3(0, 100, 0);
+    sun.intensity = 1;
+
+    const ambient = new BABYLON.HemisphericLight("ambient", new BABYLON.Vector3(0, 1, 0), scene);
+    ambient.intensity = 0.4;
+
+    const skybox = BABYLON.MeshBuilder.CreateBox("skyBox", { size: 1000 }, scene);
+    const skyboxMaterial = new BABYLON.StandardMaterial("skyBoxMat", scene);
+    skyboxMaterial.backFaceCulling = false;
+    skyboxMaterial.disableLighting = true;
+    skybox.material = skyboxMaterial;
+
+    let time = 0;
+
+    scene.onBeforeRenderObservable.add(() => {
+        time += engine.getDeltaTime() * 0.00002;
+        if (time > 1) time = 0;
+
+        let angle = time * 2 * Math.PI;
+        sun.direction = new BABYLON.Vector3(Math.sin(angle), -Math.cos(angle), Math.sin(angle));
+
+        let dayFactor = Math.max(0, Math.cos(angle));
+        sun.intensity = 0.8 * dayFactor;
+        ambient.intensity = 0.2 + 0.6 * dayFactor;
+
+        if (dayFactor > 0.2) {
+            skyboxMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.7, 1.0);
+            skyboxMaterial.emissiveColor = new BABYLON.Color3(0.4, 0.7, 1.0);
+        } else {
+            skyboxMaterial.diffuseColor = new BABYLON.Color3(0.02, 0.02, 0.05);
+            skyboxMaterial.emissiveColor = new BABYLON.Color3(0.02, 0.02, 0.05);
+        }
+    });
+}
+setupDayNightCycle(scene);
+
+// ======= Controles teclado =======
 let inputMap = {};
 scene.actionManager = new BABYLON.ActionManager(scene);
-scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnKeyDownTrigger, e => inputMap[e.sourceEvent.key.toLowerCase()] = true));
-scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnKeyUpTrigger, e => inputMap[e.sourceEvent.key.toLowerCase()] = false));
+scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(
+    BABYLON.ActionManager.OnKeyDownTrigger,
+    e => inputMap[e.sourceEvent.key.toLowerCase()] = true
+));
+scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(
+    BABYLON.ActionManager.OnKeyUpTrigger,
+    e => inputMap[e.sourceEvent.key.toLowerCase()] = false
+));
 
-// Evitar menú contextual en canvas (importante para right-click)
-canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+// Recargar con R
+scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(
+    BABYLON.ActionManager.OnKeyDownTrigger,
+    e => {
+        if(e.sourceEvent.key.toLowerCase() === "r"){
+            localPlayer.weapon.ammo = localPlayer.weapon.maxAmmo;
+            console.log("Recargando...");
+        }
+    }
+));
 
-// ======= Funciones para actualizar aimTarget a partir de coordenadas de pantalla =======
+// ======= Pointer handling: actualizar aimTarget =======
 function updateAimFromScreenCoords(screenX, screenY){
+    // intenta hacer pick en la escena con la cámara actual
     const pick = scene.pick(screenX, screenY, (mesh) => { return mesh !== localPlayer.weapon.mesh; }, false, camera);
     if(pick && pick.hit && pick.pickedPoint){
         aimTarget.copyFrom(pick.pickedPoint);
     } else {
+        // si no hay pick, proyectamos un punto lejos en la dirección de la cámara
+        // (obtiene el rayo de la cámara desde la pantalla)
         const ray = scene.createPickingRay(screenX, screenY, BABYLON.Matrix.Identity(), camera);
         aimTarget.copyFrom(camera.position.add(ray.direction.scale(50)));
     }
 }
 
+// escuchamos movimiento del puntero cuando no está locked
 canvas.addEventListener('pointermove', (ev) => {
-    // si pointer lock activo, no usamos client coords; movimiento se procesa en 'mousemove' listener con movementX/Y
-    if(document.pointerLockElement === canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = ev.clientX - rect.left;
-    const y = ev.clientY - rect.top;
-    updateAimFromScreenCoords(x, y);
+    // solo actualizar target si el mouse no está bloqueado (cuando está bloqueado usamos centro)
+    if(document.pointerLockElement !== canvas){
+        // screen coords relativos al canvas
+        const rect = canvas.getBoundingClientRect();
+        const x = ev.clientX - rect.left;
+        const y = ev.clientY - rect.top;
+        updateAimFromScreenCoords(x, y);
+    }
 });
 
-// cuando pointer lock -> apuntamos al centro cada frame
+// Si el usuario tiene pointer lock, apuntamos al centro de la pantalla
 function updateAimCenter(){
     const cx = engine.getRenderWidth() / 2;
     const cy = engine.getRenderHeight() / 2;
     updateAimFromScreenCoords(cx, cy);
 }
 
-// ======= Pointer lock mouse movement (rotar cámara con movementX / movementY) =======
-function onMouseMoveWhileLocked(e){
-    if(document.pointerLockElement !== canvas) return;
-    // sensitivities
-    const sens = isAiming ? AIM_SENS : NORMAL_SENS;
-    camera.alpha -= (e.movementX || 0) * 0.002 * sens;
-    camera.beta  -= (e.movementY || 0) * 0.002 * sens;
-    // clamp beta
-    camera.beta = Math.max(camera.lowerBetaLimit, Math.min(camera.upperBetaLimit, camera.beta));
-}
-document.addEventListener('mousemove', onMouseMoveWhileLocked);
-
-// ======= Aiming enter/exit =======
-function enterAim(){
-    if(isAiming) return;
-    isAiming = true;
-    desiredRadius = AIM_RADIUS;
-    // request pointer lock to capture mouse movement
-    if(canvas.requestPointerLock) canvas.requestPointerLock();
-    // visual crosshair if exists
-    const ch = document.getElementById('crosshair');
-    if(ch) ch.classList.add('aiming');
-}
-
-function exitAim(){
-    if(!isAiming) return;
-    isAiming = false;
-    desiredRadius = NORMAL_RADIUS;
-    // exit pointer lock (user can also press ESC)
-    try { if(document.exitPointerLock) document.exitPointerLock(); } catch(e){}
-    const ch = document.getElementById('crosshair');
-    if(ch) ch.classList.remove('aiming');
-}
-
-// si el pointer lock se pierde (ej: ESC), salimos de aiming
-document.addEventListener('pointerlockchange', () => {
-    if(document.pointerLockElement !== canvas && isAiming){
-        // lost lock -> exit aim
-        isAiming = false;
-        desiredRadius = NORMAL_RADIUS;
-        const ch = document.getElementById('crosshair');
-        if(ch) ch.classList.remove('aiming');
-    }
-});
-
-// ======= Movimiento + lógica por frame =======
+// ======= Movimiento =======
 scene.onBeforeRenderObservable.add(()=>{
-    // movimiento relativo cámara (igual que antes)
     let dir = new BABYLON.Vector3.Zero();
     let camForward = camera.getTarget().subtract(camera.position);
     camForward.y = 0;
@@ -190,41 +320,29 @@ scene.onBeforeRenderObservable.add(()=>{
         localPlayer.mesh.rotation.y += (targetRotation - localPlayer.mesh.rotation.y) * 0.2;
     }
 
-    // actualizar aimTarget (si pointer lock -> centro)
+    // actualizar aimTarget (centro si pointer lock)
     if(document.pointerLockElement === canvas){
         updateAimCenter();
     }
 
-    // camera sigue al jugador
-    camera.setTarget(localPlayer.mesh.position);
-
-    // suavizar zoom hacia desiredRadius (efecto ADS)
-    camera.radius += (desiredRadius - camera.radius) * AIM_LERP;
-
-    // ===== posicionar y orientar arma (lerp entre hip-fire y ADS) =====
+    // ======= Posicionar y orientar arma hacia aimTarget =======
     if(localPlayer.weapon.mesh){
-        // posición hip-fire (junto al jugador)
+        // offset local: delante y ligeramente a la derecha del jugador (ajusta a gusto)
         const forward = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y), 0, Math.cos(localPlayer.mesh.rotation.y));
         const right = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y + Math.PI/2), 0, Math.cos(localPlayer.mesh.rotation.y + Math.PI/2));
-        const hipPos = localPlayer.mesh.position.add(forward.scale(0.5)).add(right.scale(0.15)).add(new BABYLON.Vector3(0, 1.05, 0));
+        const weaponOffset = forward.scale(0.5).add(right.scale(0.15)).add(new BABYLON.Vector3(0, 1.05, 0));
+        const weaponWorldPos = localPlayer.mesh.position.add(weaponOffset);
 
-        // posición ADS (cerca de la cámara, delante de ella)
-        const camForwardRay = camera.getForwardRay();
-        const adsPos = camera.position.add(camForwardRay.direction.scale(1.0));
+        localPlayer.weapon.mesh.position.copyFrom(weaponWorldPos);
 
-        // elegir objetivo y lerpear
-        const targetPos = isAiming ? adsPos : hipPos;
-
-        // Lerp manual: p_new = p_old + (target - p_old) * t
-        localPlayer.weapon.mesh.position.x += (targetPos.x - localPlayer.weapon.mesh.position.x) * WEAPON_LERP;
-        localPlayer.weapon.mesh.position.y += (targetPos.y - localPlayer.weapon.mesh.position.y) * WEAPON_LERP;
-        localPlayer.weapon.mesh.position.z += (targetPos.z - localPlayer.weapon.mesh.position.z) * WEAPON_LERP;
-
-        // orientar arma hacia aimTarget (suavizado opcional no implementado para simplificar)
+        // hacer que el arma mire al aimTarget
         localPlayer.weapon.mesh.lookAt(aimTarget);
+
+        // si quieres limitar pitch (mirada hacia arriba/abajo), puedes leer la rotación resultante y clampear:
+        // let euler = localPlayer.weapon.mesh.rotation; ... ajustar euler.x
     }
 
-    // mandar posición al servidor si hay conexión
+    // Enviar posición al servidor (si estamos conectados)
     if(netSocket && localPlayer.id && currentRoom){
         netSocket.emit("updatePos", {
             id: localPlayer.id,
@@ -237,15 +355,9 @@ scene.onBeforeRenderObservable.add(()=>{
     }
 });
 
-// ======= Disparo (left click) + manejo de pointerdown para right-click =======
-canvas.addEventListener('pointerdown', (ev) => {
-    // right button -> aim (enter)
-    if(ev.button === 2){
-        enterAim();
-        return;
-    }
-
-    // left button -> fire
+// ======= Disparo =======
+canvas.addEventListener('pointerdown', (ev)=>{
+    // solo disparar con botón izquierdo
     if(ev.button !== 0) return;
 
     if(!localPlayer.weapon.canShoot || localPlayer.weapon.ammo <= 0) return;
@@ -255,23 +367,24 @@ canvas.addEventListener('pointerdown', (ev) => {
     localPlayer.weapon.ammo--;
     setTimeout(()=> localPlayer.weapon.canShoot = true, localPlayer.weapon.cooldown);
 
-    // origen: "muzzle" aproximado (adelante del arma)
+    // origen desde la boca del arma (aprox)
     const origin = localPlayer.weapon.mesh.position.add(localPlayer.weapon.mesh.getDirection(BABYLON.Axis.Z).scale(0.5));
+    // forward según orientación del arma (eje Z local)
     const forwardVec = localPlayer.weapon.mesh.getDirection(BABYLON.Axis.Z).normalize();
 
-    // raycast local para impacto
+    // Raycast local (opcional - para impacto inmediato)
     const ray = new BABYLON.Ray(origin, forwardVec, 50);
     const hit = scene.pickWithRay(ray, (mesh) => mesh !== localPlayer.mesh && mesh !== localPlayer.weapon.mesh);
     if(hit && hit.hit){
         console.log(`Disparo impactó en: ${hit.pickedMesh.name}`);
     }
 
-    // enviar disparo al servidor
+    // Enviar disparo al servidor (transformamos origin a array)
     const originArr = [origin.x, origin.y, origin.z];
     const forwardArr = [forwardVec.x, forwardVec.y, forwardVec.z];
     netSocket.emit("shoot", { id: localPlayer.id, room: currentRoom, origin: originArr, forward: forwardArr });
 
-    // bala visual local
+    // Bala visual local
     let bullet = BABYLON.MeshBuilder.CreateSphere("bullet", {diameter:0.08}, scene);
     bullet.position = origin.clone();
     bullet.material = new BABYLON.StandardMaterial("matBullet", scene);
@@ -287,14 +400,7 @@ canvas.addEventListener('pointerdown', (ev) => {
     });
 });
 
-// pointerup: salir de aim si sueltas botón derecho
-canvas.addEventListener('pointerup', (ev) => {
-    if(ev.button === 2){
-        exitAim();
-    }
-});
-
-// ======= Network helpers: spawn / despawn / startGame (idem tu implementación previa) =======
+// ======= Network helpers: spawn / despawn =======
 function spawnRemote(id, state){
     if(remotePlayers[id]) return;
     const p = BABYLON.MeshBuilder.CreateCapsule("remote_"+id, {radius:0.5, height:1.5}, scene);
@@ -312,6 +418,7 @@ function despawnRemote(id){
     }
 }
 
+// ======= startGame: call from index.html with socket and room info =======
 function startGame(socketParam, roomParam, nameParam){
     if(!socketParam){
         console.error("startGame: socketParam missing");
@@ -323,14 +430,18 @@ function startGame(socketParam, roomParam, nameParam){
     localPlayer.name = currentName;
     localPlayer.room = currentRoom;
 
+    // If server-side join wasn't sent, send it now
     try { netSocket.emit && netSocket.emit("joinRoom", { room: currentRoom, name: currentName }); } catch(e){}
 
+    // Listeners (cover a few common server event names)
     netSocket.on("init", data=>{
         localPlayer.id = data.id || netSocket.id || data.socketId;
         console.log("INIT from server. my id:", localPlayer.id);
     });
 
+    // If server sends a full list keyed by id
     netSocket.on("currentPlayers", (list)=>{
+        // spawn / sync
         for(const [id, state] of Object.entries(list)){
             if(id === localPlayer.id) continue;
             spawnRemote(id, state);
@@ -356,8 +467,11 @@ function startGame(socketParam, roomParam, nameParam){
         despawnRemote(id);
     });
 
+    // Generic updatePlayers (server might send full snapshot)
     netSocket.on("updatePlayers", (playersObj)=>{
+        // Ensure all present, spawn missing, remove extra
         const serverIds = new Set(Object.keys(playersObj || {}));
+        // spawn/update
         for(const id of serverIds){
             if(id === localPlayer.id) continue;
             const state = playersObj[id];
@@ -367,12 +481,15 @@ function startGame(socketParam, roomParam, nameParam){
                 if(state.rot !== undefined) remotePlayers[id].rotation.y = state.rot;
             }
         }
+        // remove locals not on server
         for(const id in remotePlayers){
             if(!serverIds.has(id)) despawnRemote(id);
         }
     });
 
+    // Shoot event from server
     netSocket.on("playerShoot", ({ id, origin, forward })=>{
+        // origin may be array or object
         let o;
         if(Array.isArray(origin)) o = new BABYLON.Vector3(origin[0], origin[1], origin[2]);
         else if(origin && origin.x !== undefined) o = origin;
@@ -383,6 +500,7 @@ function startGame(socketParam, roomParam, nameParam){
         else if(forward && forward.x !== undefined) f = forward;
         else f = new BABYLON.Vector3(0,0,1);
 
+        // Visual bullet
         const bullet = BABYLON.MeshBuilder.CreateSphere("rb_"+Date.now(), {diameter:0.08}, scene);
         bullet.position = o.clone();
         bullet.material = new BABYLON.StandardMaterial("rbMat", scene);
@@ -400,6 +518,7 @@ function startGame(socketParam, roomParam, nameParam){
     console.log("startGame: network handlers attached for room:", currentRoom);
 }
 
+// Expose startGame globally so index.html can call it
 window.startGame = startGame;
 
 // ======= Render loop =======
