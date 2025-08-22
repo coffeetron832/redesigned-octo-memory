@@ -1,5 +1,3 @@
-public/client_babylon.js:
-
 // public/client_babylon.js
 // ======= Variables globales =======
 let canvas = document.getElementById('renderCanvas');
@@ -36,6 +34,14 @@ let remotePlayers = {}; // id -> mesh
 // ======= Aim target (punto en el mundo hacia donde apunta el ratón) =======
 let aimTarget = new BABYLON.Vector3(0, 1.2, 5); // valor inicial
 
+// ======= Estado de apuntado (ADS) =======
+let isAiming = false;
+let aimBlend = 0.0; // 0 = hip, 1 = apuntando
+const AIM_BLEND_SPEED = 0.12; // qué tan rápido interpola la animación
+const HIP_RADIUS = 6;   // radio cámara por defecto
+const AIM_RADIUS = 3;   // radio cuando apuntas
+let desiredCameraRadius = HIP_RADIUS;
+
 // ======= Crear jugador (local mesh) =======
 localPlayer.mesh = BABYLON.MeshBuilder.CreateCapsule("player_local", {radius:0.5, height:1.5}, scene);
 localPlayer.mesh.position.set(0, 1, 0);
@@ -48,15 +54,10 @@ localPlayer.mesh.checkCollisions = true;
 localPlayer.weapon.mesh = BABYLON.MeshBuilder.CreateBox("pistol_local", {width:0.3, height:0.15, depth:0.9}, scene);
 localPlayer.weapon.mesh.material = new BABYLON.StandardMaterial("matGun_local", scene);
 localPlayer.weapon.mesh.material.diffuseColor = new BABYLON.Color3(0.12,0.12,0.12);
-// No la parentamos: la posicionaremos manualmente cada frame.
-// localPlayer.weapon.mesh.parent = localPlayer.mesh;
 localPlayer.weapon.mesh.isPickable = false; // evitar picks sobre el arma
 
-// Ajuste visual: elevamos el pivote si quieres rotación limpia (opcional)
-// localPlayer.weapon.mesh.bakeCurrentTransformIntoVertices(); // si necesitas fijar transformaciones
-
-// ======= Cámara estilo GTA =======
-let camera = new BABYLON.ArcRotateCamera("arcCam", -Math.PI/2, Math.PI/3, 6, localPlayer.mesh.position, scene);
+// ======= Cámara estilo GTA (ArcRotate) =======
+let camera = new BABYLON.ArcRotateCamera("arcCam", -Math.PI/2, Math.PI/3, HIP_RADIUS, localPlayer.mesh.position, scene);
 camera.attachControl(canvas, true);
 camera.lowerRadiusLimit = 2;
 camera.upperRadiusLimit = 12;
@@ -65,6 +66,10 @@ camera.checkCollisions = true;
 camera.collisionRadius = new BABYLON.Vector3(0.5,0.5,0.5);
 camera.upperBetaLimit = Math.PI/2.2;
 camera.lowerBetaLimit = 0.1;
+camera.useBouncingBehavior = false;
+
+// Guardamos radio por defecto
+camera.radius = HIP_RADIUS;
 
 // ======= Luz =======
 let light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0,1,0), scene);
@@ -275,7 +280,6 @@ function updateAimFromScreenCoords(screenX, screenY){
         aimTarget.copyFrom(pick.pickedPoint);
     } else {
         // si no hay pick, proyectamos un punto lejos en la dirección de la cámara
-        // (obtiene el rayo de la cámara desde la pantalla)
         const ray = scene.createPickingRay(screenX, screenY, BABYLON.Matrix.Identity(), camera);
         aimTarget.copyFrom(camera.position.add(ray.direction.scale(50)));
     }
@@ -300,7 +304,32 @@ function updateAimCenter(){
     updateAimFromScreenCoords(cx, cy);
 }
 
-// ======= Movimiento =======
+// ======= MOUSE: prevenir menú contextual y manejar botones =======
+canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // evita menú derecho
+
+canvas.addEventListener('pointerdown', (ev)=>{
+    // Botón derecho inicia apuntado (ADS)
+    if(ev.button === 2){
+        isAiming = true;
+        desiredCameraRadius = AIM_RADIUS;
+        // cuando entras a aim, lock al centro si quieres (opcional): requestPointerLock();
+    }
+
+    // botón izquierdo dispara (implementado más abajo también para compatibilidad)
+    if(ev.button === 0){
+        // disparo principal
+        // (el bloque de disparo ya existe más abajo; mantenemos compatibilidad)
+    }
+});
+
+canvas.addEventListener('pointerup', (ev)=>{
+    if(ev.button === 2){
+        isAiming = false;
+        desiredCameraRadius = HIP_RADIUS;
+    }
+});
+
+// ======= Movimiento, arma y sincronización =======
 scene.onBeforeRenderObservable.add(()=>{
     let dir = new BABYLON.Vector3.Zero();
     let camForward = camera.getTarget().subtract(camera.position);
@@ -325,21 +354,41 @@ scene.onBeforeRenderObservable.add(()=>{
         updateAimCenter();
     }
 
-    // ======= Posicionar y orientar arma hacia aimTarget =======
+    // ======= Interpolar cámara radius hacia desiredCameraRadius =======
+    camera.radius += (desiredCameraRadius - camera.radius) * 0.12;
+
+    // ======= Posicionar y orientar arma hacia aimTarget con blending hip->aim =======
     if(localPlayer.weapon.mesh){
-        // offset local: delante y ligeramente a la derecha del jugador (ajusta a gusto)
-        const forward = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y), 0, Math.cos(localPlayer.mesh.rotation.y));
-        const right = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y + Math.PI/2), 0, Math.cos(localPlayer.mesh.rotation.y + Math.PI/2));
-        const weaponOffset = forward.scale(0.5).add(right.scale(0.15)).add(new BABYLON.Vector3(0, 1.05, 0));
-        const weaponWorldPos = localPlayer.mesh.position.add(weaponOffset);
+        // cálculo de posición "hip" (cadera)
+        const forwardPlayer = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y), 0, Math.cos(localPlayer.mesh.rotation.y));
+        const rightPlayer = new BABYLON.Vector3(Math.sin(localPlayer.mesh.rotation.y + Math.PI/2), 0, Math.cos(localPlayer.mesh.rotation.y + Math.PI/2));
+        const hipOffset = forwardPlayer.scale(0.5).add(rightPlayer.scale(0.15)).add(new BABYLON.Vector3(0, 1.05, 0));
+        const hipWorldPos = localPlayer.mesh.position.add(hipOffset);
 
-        localPlayer.weapon.mesh.position.copyFrom(weaponWorldPos);
+        // cálculo de posición "aim" (cerca de la cámara / centro de pantalla)
+        const camForwardWorld = camera.getTarget().subtract(camera.position).normalize();
+        // un punto cercano delante de la cámara; puedes ajustar la distancia (1.0) para acercar/alejar
+        const aimWorldPos = camera.position.add(camForwardWorld.scale(1.0)).add(new BABYLON.Vector3(0.15, -0.15, 0)); // ligera corrección a la derecha/up
 
-        // hacer que el arma mire al aimTarget
-        localPlayer.weapon.mesh.lookAt(aimTarget);
+        // actualizar blend (0..1)
+        aimBlend += ( (isAiming ? 1 : 0) - aimBlend ) * AIM_BLEND_SPEED;
 
-        // si quieres limitar pitch (mirada hacia arriba/abajo), puedes leer la rotación resultante y clampear:
-        // let euler = localPlayer.weapon.mesh.rotation; ... ajustar euler.x
+        // interpolar posición y rotación
+        const lerpedPos = BABYLON.Vector3.Lerp(hipWorldPos, aimWorldPos, aimBlend);
+        localPlayer.weapon.mesh.position.copyFrom(lerpedPos);
+
+        // si apuntando fuertemente (aimBlend > 0.1) orienta hacia aimTarget; si no, orienta según jugador
+        if(aimBlend > 0.05){
+            localPlayer.weapon.mesh.lookAt(aimTarget);
+        } else {
+            // orientar aproximadamente en la dirección del jugador
+            const lookAtPoint = localPlayer.mesh.position.add(forwardPlayer.scale(5)).add(new BABYLON.Vector3(0,1,0));
+            localPlayer.weapon.mesh.lookAt(lookAtPoint);
+        }
+
+        // Opcional: ligeramente reducir la escala del arma al apuntar (sensación de acercamiento)
+        const targetScale = 1 - 0.12 * aimBlend;
+        localPlayer.weapon.mesh.scaling.set(targetScale, targetScale, targetScale);
     }
 
     // Enviar posición al servidor (si estamos conectados)
@@ -355,7 +404,7 @@ scene.onBeforeRenderObservable.add(()=>{
     }
 });
 
-// ======= Disparo =======
+// ======= Disparo: izquierdo (usa orientación actual del arma) =======
 canvas.addEventListener('pointerdown', (ev)=>{
     // solo disparar con botón izquierdo
     if(ev.button !== 0) return;
