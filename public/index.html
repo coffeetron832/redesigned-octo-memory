@@ -100,14 +100,24 @@
   <script src="https://cdn.babylonjs.com/babylon.js"></script>
   <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
 
-  <!-- Cliente -->
-  <script>
-    const socket = io();
-    let roomId, playerName;
+  <!-- Cliente: cargar primero el motor / lógica del juego -->
+  <script src="client_babylon.js"></script>
 
+  <!-- Luego el script UI que crea socket y arranca el juego -->
+  <script>
+    // Crear socket una sola vez en el HTML y pasarlo al cliente.
+    const socket = io();
+
+    // Manejar fallo de conexión (opcional, útil para depurar 404 / socket.io)
+    socket.on("connect_error", (err) => {
+      console.error("No se pudo conectar al servidor socket.io:", err);
+      alert("Error: no se pudo conectar al servidor (socket.io). Verifica que el servidor esté corriendo.");
+    });
+
+    // UI + unión a sala
     document.getElementById("joinBtn").addEventListener("click", () => {
-      playerName = document.getElementById("playerName").value.trim();
-      roomId = document.getElementById("roomId").value.trim();
+      const playerName = document.getElementById("playerName").value.trim();
+      const roomId = document.getElementById("roomId").value.trim();
 
       if (!playerName || !roomId) {
         alert("Ingresa nombre y sala");
@@ -118,13 +128,18 @@
       document.getElementById("menu").style.display = "none";
       document.getElementById("hud").classList.remove("hidden");
 
-      // Enviar join al server
+      // Emitir join (también lo hará startGame por seguridad)
       socket.emit("joinRoom", { roomId, name: playerName });
 
-      // Aquí arrancamos el juego
-      startGame(socket, roomId, playerName);
+      // startGame fue expuesto globalmente por client_babylon.js
+      if (typeof startGame === "function") {
+        startGame(socket, roomId, playerName);
+      } else {
+        // Protección: startGame no existe (script no cargó correctamente)
+        console.error("startGame no está definido — verifica que client_babylon.js se haya cargado.");
+        alert("Error interno: el juego no pudo arrancar. Revisa la consola.");
+      }
     });
   </script>
-  <script src="client_babylon.js"></script>
 </body>
 </html>
